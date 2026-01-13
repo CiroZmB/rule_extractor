@@ -1,0 +1,3647 @@
+
+Introducción al Uso Avanzado de Builders- Alan Tomillero
+
+muy buenas bienvenidos todos a una nueva edición de robotrader en este caso nos
+0:09
+acompaña al antom millero que fue flamante ganador en la última edición de
+0:14
+de robot Trader todos aquellos que que podéis ver lo que hizo en en la entrega de
+0:23
+premios en el vídeo correspondiente y hoy ahondando en lo
+0:29
+que hizo ao pasado pues va a hablarnos sobre una introducción al uso avanzado
+0:35
+de builders y va a compartir código Así que promete ser muy interesante ya sin más os dejo con con
+0:41
+Alan Bueno muy buenas tardes a todos como bien ha introducido Edu Mi nombre
+0:48
+es alant tomo Martínez soy desarrollador y Trader algorítmico y Bueno fui ganador
+0:54
+de esta edición de de la edición pasada de robot trer 2024
+1:00
+y bueno hoy he tenido un poco de bueno durante bastante tiempo he tenido un
+1:05
+poco de dilema a ver lo que lo que podía traer eh Ya que Considero que el mundo del
+1:12
+training algorítmico es un poco complejo a la hora de de compartir código y sobre
+1:19
+todo en en temática de roll stration y he decidido democratizar un poco el
+1:25
+mundo de de la extracción de reglas y traer traer traer algo potente para
+1:33
+poderlo donar a la comunidad y que bueno que pueda mejorarlo que seguro que lo va a hacer y también explicar el Por qué el
+1:41
+Por qué llegué a esa conclusión así que bueno vamos a empezar con el disclaimer
+1:46
+que dice eh que al final todo lo que diga es mi perspectiva no es la realidad Así que todo lo que he construido Eh mi
+1:56
+metodología el código que Vais a ver más tarde que voy a voy a explicar paso por
+2:02
+paso está hecho desde mi desde mi perspectiva No digo que sea ni muchísimo
+2:08
+menos la única forma de aproximarse al mundo del trading algorítmico pero si ha sido la mía y así es como pude Pues eso
+2:15
+ganar la anterior edición de robot triler y bueno me hice la siguiente
+2:21
+pregunta no cuando cuando empecé builder o rule extra o ambos
+2:27
+entendiendo builder como una herramienta como puede ser avanzo estrategic One que
+2:33
+es la que es la que estaba utilizando en aquel entonces o un enfoque ya de rule stration entendiéndose como
+2:39
+eh hacer tu código propio extraer reglas testear
+2:45
+lasas y y luego pues montar sistemas algorítmicos o ambos una mezcla de
+2:53
+ambos así que bueno pasamos al a lo siguiente que es las problemáticas de
+2:59
+los wilders bien qué problemáticas Me encontré con
+3:04
+los builders en este caso cuando hablo de builder voy a hablar de strategy One que al final es la herramienta que he
+3:09
+utilizado y utiliz el día de hoy con la con la cual empecé y por ello
+3:16
+me decidí también abrir la otra vía que era hacer un ru stration
+3:22
+propio lo primero que me encontré fue que hacía una mezcla de reglas ineficiente Eh Esto Qué significa que
+3:29
+cuando tú entras en en en strategy one y haces cualquier tipo de de proceso de
+3:36
+build de estrategias eh vi mucho vi Muchas estrategias que que su código era
+3:43
+un algoritmo imposible no digamos por ejemplo mezclaba un rsi por ejemplo con
+3:49
+con una media móvil y una serie de de incongruencias que a la hora de la
+3:54
+realidad eso no no tenía ningún tipo de sentido no y te ponen números Como por ejemplo que ha un millón de backtest
+4:01
+cada cada hora o cosas así que dic Bueno sí pero cuántos de esos backtest son son vest reales no eso fue la primera
+4:10
+cuestión que me encontré no Y luego el periodo os he puesto entre paréntesis
+4:16
+dudoso ya que bueno Considero que que muchas de estas herramientas pueden
+4:24
+estar orientadas no sé si a propósito o por casualidad a a un eh luc vayas no Al
+4:34
+final a mirar a futuro y sacarte lo mejor teóricamente de de ese activo no
+4:42
+en la búsqueda entonces Bueno al final esto último lo he puesto como he dicho
+4:47
+al principio no voy a volver a repetir todo esto es mi perspectiva y no la realidad Así que para mí los periodos
+4:52
+autos sample de los builders que he utilizado son bastante dudosos entonces bueno eh esas eran las
+5:01
+dos problemáticas más así flagrantes que vi en en este builder y en algunos otros
+5:09
+que que he utilizado entonces bueno dije vale Qué podemos hacer para solucionar esto
+5:14
+porque al final no nos vamos a olvidar que tiene muchos pros no herramientas como strategic One pues puedes ahí
+5:20
+tienes un asistente como es el algo wizard que puedes montarte tus propias
+5:25
+reglas y p testear puedes hacer un montonazo de cosas probar en mercados adicionales el motor de backtest es muy
+5:33
+rápido está hecho todo en Java está super optimizado porque he mirado código También
+5:39
+tienen código bueno tienen una parte un módulo de Open source donde puedes programar dentro está muy bien tienen
+5:46
+muchos muchos puntos a favor no no se tiene por por descartar este tipo de de
+5:51
+herramientas así que bueno dije vale eh tenemos este
+5:57
+problema Cuál es la solución luego también quiero hacer un inciso que
+6:03
+es esto es bastante importante que de aquí salió el concepto de de Monkey test
+6:10
+que esto lo explicó excelentemente y antolí en la anterior en su anterior
+6:15
+ponencia en robot Trader y nació a raíz de de que cuando estaba trabajando con
+6:21
+estos builders eh ponía estrategias no a buscar no a minar estrategias ahí empezaba la
+6:28
+máquina a correr sin parar y ponía estrategias eh con Take profit y
+6:33
+stop loss al final Pues tú puedes tener bastantes eh bastantes reglas a la hora
+6:40
+de de minar estrategias y una de ellas es poner Take profit y stop loss es básico puedes poner eh salida por
+6:46
+exposición o por número de barras que es es exactamente lo mismo y bueno al principio Pues estaba trasteando la
+6:52
+herramienta y ponía y ponía las estrategias con Take profit stop loss
+6:57
+Entonces me di cuenta que por ejemplo eh en activos muy tendenciales Como por ejemplo pueden ser índices o algunas
+7:04
+materias primas vi que hacía algo raro no sacaba estrategias que que en s el
+7:12
+comportamiento me parecía bastante extraño porque ya os digo las reglas
+7:18
+eran reglas imposibles no reglas eh Que prácticamente eran aleatorias mezclas
+7:25
+ahora me lo inventaría Pero puede ser cuando el r6 se LL haora a una media
+7:31
+cosas que dices Bueno no tiene No tiene mucho sentido no y me di cuenta que lo que estaba haciendo únicamente es como
+7:38
+buscando una excusa Por así decirlo entre comill demos vale para entrar a mercado mira lo que estaba haciendo es
+7:44
+repartir la entrada de una operación buscando una regla que se
+7:49
+cumpliese pues no el 100% del tiempo A lo mejor un 20 un 15% del tiempo
+7:54
+entonces ahí pues te montaba la estrategia te ponía el Take profit y el Stop loss lo que estaba haciendo era
+8:01
+Pues eso distribuir trades aleatoriamente eh con un Take profit un stop loss así
+8:07
+capturando el sesgo tendencial del activo y evidentemente iba a ganar dinero Entonces esto ya fue fue lo
+8:16
+primero por lo cual me di cuenta de que estas herramientas hay que tener mucho cuidado a la hora de de utilizarlas
+8:22
+porque te pueden engañar muy fácilmente No Y ahí hice un simple test no que que
+8:28
+me acuerdo que program en su origen dentro de strategy One que al final era decir vale esta condición que me está
+8:35
+dando el builder que Cuántas veces se cumple un 25% de las veces pues entonces
+8:40
+me hacía un simplemente un un boano aleatorio que se activara dier true 25%
+8:47
+de las veces y lo hice sobre el motor de Monte Carlo De stra que al final lo que hace
+8:54
+es un montón de Back test y lo que vi era que estrategias eran iguales que al
+9:01
+final era la el concepto del mono tirando dardos era igual de de rentable
+9:06
+que esa estrategia o incluso más no entonces ahí empecé a a dudar no un poco
+9:12
+de de todo este de todos estos sistemas utilizados como como se vende no que es
+9:18
+entras entras en la herramienta pones el activo cargas los datos eh pones cuatro
+9:25
+normas y le das al Play así que bueno
+9:30
+eh Cuál es la solución para todo esto python Bueno he puesto python puede ser
+9:37
+t shar puede ser Java puede ser múltiples lenguajes de programación que son iguales o mejores que python pero
+9:44
+bueno a mí me caía más a mano utilizar python ya que ya que llevo bastantes años programando y entonces lo que hice
+9:52
+fue dije vale Cómo no me fío de de los números que me está
+10:00
+sacando strategic One en cuanto a backes por hora porque ya os digo que eh que no
+10:06
+son reales o no son reales sí que son reales pero no son efectivos no Y como
+10:13
+yo sospecho que los periodos autos sample Eh no funcionan como deberían de funcionar voy a construirme mi propio
+10:21
+rule stration en python pero que Lua pero que luego pueda utilizar con
+10:28
+strategy porque al final otra de las cosas muy buenas que no he comentado strategy One es que tú le pones una
+10:33
+estrategia de una forma muy sencilla como veremos posteriormente y te tienes
+10:39
+el código en metatrader 4 metatrader 5 tienes el el código para para eas
+10:46
+Language bueno tienes un montonazo de de plataformas eh a golpe de clic Así que
+10:53
+quería seguir utilizando no las prestaciones que me que me daba strategic One y aquí viene el kit de la
+11:00
+cuestión como he dicho al principio me ha costado bastante tomar la decisión
+11:06
+porque al final eh los traders algorítmicos pecamos un poco de de recelosos no en cuanto en cuanto al a la
+11:14
+propiedad intelectual No si se puede llamar así de nuestro código pero he decidido que que quiero democratizar un
+11:21
+poco el el mundo del ru stration porque a raíz de de la ponencia en robot Trader
+11:27
+bastante gente me ha escrito preguntándome sobre el tema de rul stration cómo lo hacía en
+11:34
+python hay algunos ejemplos hay algunas librerías Como por ejemplo riper que
+11:39
+también comentó mi mi colega J antolí en la anterior ponencia que hizo que sí que
+11:45
+te dan reglas y puedes combinarlas pero no hay nada o yo no conozco al menos yo no conozco nada que exista no que que
+11:53
+diga voy a [ __ ] 60.000 condiciones de Mercado y les voy a hacer un actes y lo puedo ver
+12:00
+no las tienes que construir tú cómo las construyo es lento es tedioso trabajar
+12:05
+con pandas o con dataframes tiene una limitación así que bueno me puse a a a
+12:12
+codificar todo esto y hoy he decidido que que lo voy a compartir con toda la comunidad para que seguramente pues lo
+12:20
+mejoré lo miréis lo critiqué pongáis más métricas hagáis muchísimas evoluciones y
+12:26
+Bueno un poco para para colaborar con con la comunidad de Estoy leyendo por ahí Gracias yauma
+12:36
+em bueno para colaborar con la comunidad en en en el futuro desarrollo de nuevas
+12:43
+aplicaciones de de Trade algorítmico con la metodología rle stration que es al final lo que los que unos cuantos
+12:49
+estamos ahí abogando por eso Entonces Bueno me he decidido de compartir el el
+12:55
+código Vale ahora vamos a repasarlo paso por paso voy a explicar un poco así a groso modo disclaimer antes el código
+13:04
+está hecho eh de la forma más legible pero a su vez también es cierto
+13:11
+que está tiene procesos paralelos tiene algunos procesos que no son tan obvios así que bueno la gente que no esté tan
+13:18
+eh metida en el mundo de python tenéis asistentes como como inteligencias
+13:23
+artificial chat gpt dips tenéis un montón de de herramientas para que podáis comprender el código
+13:29
+y es lo que comentaba antes con Edu hoy en día si quieres hacerte el algorítmico
+13:35
+una premisa bastante importante considero yo es saber programar así que bueno no hay excusa para poder entender
+13:41
+el el código y bueno vamos a vamos a ver un poquito cómo está
+13:50
+estructurado bien Vamos aquí a a lo que nos
+13:55
+importa vamos a ver aquí este código lado con Edu vale lo dejaré en un link
+14:01
+en la en la descripción del vídeo para que todo el mundo pues como he dicho pueda utilizarlo De todas formas si
+14:07
+tenéis alguna duda o lo que sea también dejaré al final unos Eh bueno mi mi
+14:13
+Telegram mi correo por cualquier persona que tenga algún tipo de duda me puede comentar perfectamente y yo le
+14:19
+responderé encantado Así que está compartiendo bien la pantalla
+14:26
+no o sigue el el se ve el navegador Sí se ve se ve Sí
+14:33
+vale perfecto Es que como no me sale el recuadro Vale pues Vale vamos a utilizar la librería talip vale que que bueno es
+14:41
+creo que es muy reconocida en python vale vamos a utilizar pandas npai y
+14:47
+bueno varias librerías básicas como Time chop lip que esto nos va a permitir paralelizar los procesos cpai para algún
+14:55
+tipo de de cálculo uid para generar los uids que luego explicaré para qué sirven
+15:01
+chic pg no no se utiliza Así que esta la tengo que quitar y hay alguna haya visto
+15:06
+que hay alguna repetida Pero bueno eh que aquí mutual info regression que
+15:11
+esto es para hacer cálculos lo dejo lo dejo ahí como como como recomendación para que para
+15:19
+que alguien pueda pueda hacer cálculos con esto que ya que es bastante es
+15:24
+bastante interesante vale luego tenemos reex hasle bueno creo que también está
+15:29
+por ahí iter Tools vale pickel que es muy importante que es para serializar
+15:35
+vale Y tenemos aquí el garbas Collector si no me equivoco Sí vale entonces vamos
+15:41
+a explicar la función principal vale a todo esto Qué estamos haciendo estamos
+15:47
+eh cogiendo o vamos a [ __ ] un set de datos vale que van a ser eh velas de
+15:54
+temporalidad x h1 h4 h12 D1 vale Y lo
+15:59
+que vamos a hacer va a ser generar un montonazo de reglas y mezclarlas entre
+16:05
+sí para así poder solucionar los problemas que yo observé que presentaban
+16:12
+los builders tradicionales más famosos entonces en la función transf 10 vale
+16:18
+Tenemos aquí el nombre del csv que el nombre del csv va a ser pues el eh el
+16:25
+csv donde estén los las velas vale las exposición a días vale exposición a días
+16:31
+va a ser la salida por barras importante
+16:37
+Esto está hecho a salida por barras y quiero hacer un inciso aquí porque esto es bastante importante explicar el Por
+16:44
+qué como he explicado anteriormente hice el monkey test porque vi que al final lo
+16:49
+que lo que estaba haciendo en los builders simplemente era
+16:55
+eh era [ __ ] el sesgo del activo poner un profit un stop l repartido en un
+17:01
+porcentaje de entradas aleatorio y evidentemente iba a ser rentable por qué Porque el activo subyacente subía no
+17:08
+Entonces determiné que lo mejor para minar reglas era la salida por
+17:14
+exposición o sea salida a tres velas salida a cuatro a 5 a 10 a 15 porque así
+17:20
+obligaba a encontrar un sesgo de alguna forma vale
+17:26
+no es lo mismo que yo reglas con un Take profit un stop loss a que le diga que
+17:32
+tiene que ser rentable en una salida a x tiempo vale Y eso para mí me guarda y me
+17:38
+guardaba bastante bastante lógica bien thold 25 vale esto Qué
+17:46
+significa el thg 25 significa 25 pips
+17:53
+vale Qué quiere decir que a partir de que movimiento
+17:59
+tenga 25 pips en la dirección que está aquí short false o true vale es el
+18:05
+último parámetro de todos Va a ser el va a ser a partir que voy a va a ser como a
+18:12
+ver cómo lo explico e va a ser como la Barrera en la que yo
+18:19
+determino que el movimiento es válido o no vale luego la columna luego las luego
+18:27
+lo iremos viendo esto eh Si queda un poco as lioso la la explicación lo vamos a ver gráficamente la columna va a ser
+18:35
+daytime vale Esta es la columna principal y luego que es es la fecha y
+18:41
+la hora y luego la dirección del activo vale short false en principio va a
+18:47
+buscar largos y si ponéis true pues va a buscar cortos vale bien aquí cargaría csv y aquí ya
+18:55
+entraría todas las funciones vale que nos van a calcular Los indicadores
+19:01
+técnicos vemos rsi vemos adx Voy a ponerlo un pelín más grande
+19:07
+vemos el plus de I minus de I Williams r media
+19:13
+simple media exponencial Aquí vemos los rangos no de lo que hace hace del Rango
+19:19
+desde el dos hasta el 301 en saltos de dos en dos significa que va a calcular la media 2 4 6 8 etcétera etcétera vale
+19:29
+atr el ibs desviación estándar bullinger
+19:35
+bands Mac momentum Aron el up el Aron down
+19:44
+rate of change Y luego el shift que queremos el shift queé
+19:49
+significa shift significa velas hacia atrás vale Yo puedo puedo saber
+19:56
+eh la media móvil de del cierre anterior o la medida móvil de hace dos cierres No
+20:01
+pues esto también vamos a determinarlo aquí no y lo interesante de todo esto
+20:07
+est este trozo de código sonará yauma está por ahí reaprovechar
+20:12
+de de algo que que hicimos hace bastante tiempo vale
+20:18
+eh bien entonces aquí va a calcular los retornos vale los retornos en pips vale
+20:23
+de varias exposiciones eh qué más tenemos por aquí esto Calcula
+20:29
+los retornos también vale luego tenemos el target y hace día del mes el mes día de
+20:38
+la semana el año y bueno todo esto os lo explico pero con ejecutarlo lo Vais a
+20:44
+ver en un momento vale luego tiene aquí varias funciones map creator Esta es interesante y aquí es donde ya empezamos
+20:52
+a solucionar el primer problema que dan los los builders vale
+20:58
+Qué hace esta función que se llama create colum map lo que hago es un mapa
+21:05
+de directrices que significa que le voy a decir aquí hago las columnas del rsi las
+21:12
+columnas del adx bueno de todos los indicadores no tenemos aquí todos los indicadores Entonces qué hacemos
+21:19
+aquí le vamos a decir que los rsis los mezcle
+21:25
+con un Rango de 0 a 100 Esto va crear una lista del 0 al 100 o con otros
+21:33
+rsis Qué vamos a hacer con el adx Pues lo mismo Rango del 0 al 100 con los
+21:40
+otros adx con el plus de I lo mismo con el menus de I lo más de lo mismo con el
+21:46
+Williams Pues mira aquí como el Williams en este caso es negativo pues hacemos un Rango del 0 al -1 de men1 -1 o con el
+21:55
+propio Williams interesante No qué hacemos con las medias pues lo vamos a comparar con
+22:02
+el open el High el low el close esto evidentemente todo este código se puede
+22:07
+se puede mejorar como he dicho al principio vale pero ya es una base bastante sólida para que todo el mundo pueda empezar a introducirse en el mundo
+22:14
+del R stration vale Se puede mezclar con evidentemente con precios y se puede
+22:20
+mezclar con la propia media vale el ibs pues más de lo mismo
+22:26
+eh Bueno Tenemos aquí una serie de funciones que nos van a comparar
+22:33
+elementos con consigo mismo o con otros elementos coherentes como pueden ser
+22:38
+numéricos con esto ya estamos pasándole por la derecha la mayoría de builders que que he visto porque no sé por qué
+22:46
+motivo o lo desconozco o no sé si a día de hoy ya lo han solucionado pero la mezcla que hacen de comportamientos de
+22:54
+Mercado es aleatoria entonces aquí cada que vamos a hacer va a tener sentido por
+23:00
+qué porque va a estar organizado porque va a ser coherente vamos a ir ejecutando
+23:07
+Esto vale me he olvidado importante que se ejecutarlo vale función crear
+23:14
+directorio al final Pues nos va a crear un directorio vale aquí yo ya tengo en
+23:20
+mi csv de mi csv de velas Vale pues mi
+23:25
+mi mi columna de de el Day Time no O sea la el día el mes
+23:33
+y la hora con perdon el día eh el año el mes y el día junto con la hora se llama
+23:42
+la columna daytime y aquí es como se llama el csv que vamos a trabajar con la
+23:47
+libra neozelandés ah1 exposición a días vale vamos a poner
+23:54
+cuatro y th 65 es decir un movimiento de 65 pips lo daría como válido
+24:01
+bien Vamos a cargar esto Qué vamos a hacer vamos a crear una carpeta vale que
+24:09
+tenga results bar exposi días barcol Así que se crear una carpeta que se llama
+24:14
+res results baraj eh 4/65 era el directorio y nos va a crear
+24:21
+ya todo el dataframe con todos los cálculos vamos a ver la ejecución
+24:31
+aquí lo tenemos y este sería el resultado vale tendríamos aquí desde el
+24:37
+2017 vale con su Open High low Close repito estos h12 Vale pues con todas
+24:44
+absolutamente todos los cálculos de todos los indicadores y con todos los retornos vale retorno dos velas retorno
+24:52
+cu o sea cuatro exposiciones 6 8 10 12 etcétera etc etcétera vale esto de los
+25:00
+targets No ahora mismo no lo vamos a utilizar por eso tampoco lo he explicado mucho lo del thr y demás vale pero ya
+25:06
+abro la puerta para quien quiera hacer algún quiera aplicar algún tipo de de algoritmo de Machine learning o o bueno
+25:15
+sí de Machine learning para que pueda sacar también sus propias reglas vale
+25:21
+tenemos pues más columnas vale vamos a hacer un e
+25:30
+tenemos 1825 columnas Vale y vamos a ver pues bueno
+25:36
+todas las columnas return las vemos aquí todas organizadas vale esto es en
+25:43
+pips son pips vale es el retorno en pips vale a dos exposiciones cuatro lo que he
+25:49
+explicado antes no Aquí vamos a ver que no se haya filtrado ningún fin de semana que a veces he visto que los datos ya
+25:56
+que yo estoy utilizando de ducas copy en mi caso me los bajo directamente de de strategy One es muy sencillo
+26:03
+eh luego os explicaré Cómo cómo se puede hacer vale Y bueno la licencia también
+26:09
+Para probarlo también es gratuita Pero bueno ya entraremos en en detalle más tarde Así que bueno Yo estoy
+26:17
+utilizando los datos de ducas copy no estoy utilizando quandel porque lo vi en
+26:24
+la ponencia de yauma y vi que bueno que tenían que abrir plazas y demás Pero
+26:30
+vamos en cuanto abran voy a ser un cliente seguro porque me parece maravilloso lo que han ofrecido Así
+26:38
+que vamos a proseguir esto es una función que lo que hace es genera todas
+26:43
+las reglas posibles vale Aquí empieza un poco la magia y aquí lo que hacemos Es tenemos por un lado tenemos todas las
+26:49
+columnas no el adx buinger bands tal cual Vale y aquí lo que va a hacer es
+26:56
+mezclarlo y ya veréis que esto es instantáneo vale aquí tenéis toda la mezcla vale
+27:05
+como he comentado antes en el mapa de arriba que tenemos aquí arriba vale lo
+27:12
+que hace simplemente es genera todas las posibles combinaciones con sentido vale
+27:17
+Aquí vemos pues los r6 de2 No pues qué se va a hacer un r6 de2 puede ser mayor o igual a cero puede ser menor o igual a
+27:24
+cero bla bla bla bla todo no Y entonces luego también pues vamos a ver las mez de rsis con otros rsis de otros periodos
+27:31
+toda la combinatoria posible vale esto vamos a ver qué longitud tiene total y
+27:37
+así sabremos todas las reglas que tendremos disponibles son
+27:42
+25168 reglas que estamos sacando bien Ahora vamos un poco ya a
+27:49
+por a por faena madre mía pensaba que no iba a
+27:55
+dilatar me llevo 40 minutos vale vamos a porena generate Hash esto lo que
+28:02
+hace es genera un Hash único por cada condición para que luego sea muchísimo más fácil encontrar una estrategia un
+28:11
+Hash ahora lo vemos también estas funciones las voy a
+28:16
+explicar un poco por encima porque son un poco tediosas y y es al final es el
+28:22
+Core de lo que va a mezclar todas las reglas vale Pero bueno process r esto lo
+28:28
+que hace vale al final es coge lo tengo que explicar con la de
+28:34
+abajo vale Esto va a evaluar todas las reglas aquí cojo todo el dataframe con
+28:42
+todas las reglas y lo que estoy haciendo básicamente es ejecutar mis voy a [ __ ]
+28:48
+todos los cores que tiene mi ordenador vale Y voy a lanzar en paralelo el
+28:54
+procer rul chunk vale he tenido que que he tenido que dividirlas en chunks que
+28:59
+son trozos vale imaginémonos que he dicho no tenemos 250 y pico mil de reglas No pues no yo no puedo tirarlo
+29:06
+todo de golpe lo que tengo que trocear vale Así que lo que vamos a hacer es utilizar J lip como he dicho
+29:12
+anteriormente que es una librería de de paralelización en python para hacer
+29:17
+todas las reglas vale evidentemente Esto va a depender de de del equipo que tenga
+29:23
+cada persona en su ejecución Pero bueno con un equipo mínimamente decente eh va
+29:28
+bastante rápido ahora vamos a ver en mi equipo que tiene 12 cores vamos a ver lo que va a tardar vale Y esto lo que hace
+29:36
+de toda de todo de cada regla vale va a lanzar aquí un factor de correlación que
+29:43
+al final es una correlación biserial que bueno la tengo para para ver la correlación que hay con la regla respecto al respecto al target vale la
+29:51
+longitud los trades el Win rate el retorno el has que os he dicho ahora lo
+29:58
+veremos todo eh Pero bueno lo explico Igualmente la eh exposición óptima es decir por
+30:07
+ejemplo de una regla de Trade Cuál va a ser la exposición mejor para esa regla
+30:12
+por ejemplo el rsi de dos es menor o igual a 65 qué va a ser mejor a dos una
+30:19
+salida a dos velas a cuatro a 8 a 12 a 30 vale pues aquí no va a decir no y
+30:25
+luego la correlación óptima y luego el Win rate óptimo de de El Win rate óptimo
+30:31
+es el Win rate que tiene con la con la exposición óptima vale Así que bueno me
+30:36
+dejo de palabrerío voy a lanzar Esto vale lo tenemos y vamos a ver cuánto
+30:42
+tardamos en hacer todo esto ach para
+30:53
+ver Bueno si alguien me quiere comentar algo va a tardar más o menos unos un par
+30:59
+de minutillos así que qué os parece por ahí de momento más o menos se entiende o
+31:05
+no os Leo por aquí por el chat A
+31:14
+ver la verdad que todo esto parece
+31:21
+espectacular se entiende explicas de maravilla [ __ ] Martí qué tal
+31:37
+vale vamos a ver cómo no debería de tardar mucho ya en
+31:43
+terminar Ya os digo que al final recuerdo que estamos haciendo 251.000
+31:49
+eh condiciones y luego veremos el número de de Back test reales que tenemos
+32:21
+lo decía el otro día cuando me lo enseñaste flipe con las miles de reglas que salían en minutos bueno
+32:28
+la ventaja de de esto es que la gente que que lo va a ver en YouTube va a
+32:34
+poder [Música] pasarlo No debería tardar mucho ya ahí
+32:43
+lo tenemos ya está guardando vale esto ya ya ha terminado vale lo que hace es guardar una eh guarda todo esto en la
+32:51
+carpeta en un h5 que es como un tipo de de base de datos para que podáis acceder
+32:56
+cuando queráis vale y no tengáis que volver a repetir todo este proceso así ya tenéis vuestro todas vuestras reglas
+33:02
+del activo ya terminado 123 segundos es decir 2 minutos vale
+33:09
+vamos a ver qué ha pasado aquí venga empezamos condición uno la media de 132
+33:16
+es mayor o igual a la media de 136 vale aquí tenemos una correlación vale Bueno
+33:23
+una serie de de cálculos un Win rate un retorno el Hash
+33:28
+la óptima exposición a Esto vale que serían 30 la correlación óptima el Win
+33:34
+rate óptimo y aquí tenemos en mi caso en mi caso que esto ya os digo que lo he
+33:39
+hecho para que lo podáis evolucionar y hacer lo que queráis con todo esto he puesto los profit factors vale de cada
+33:46
+una de las exposiciones Qué significa que si yo cojo eh este activo h12 y le
+33:53
+hago una regla una condición de entrada que sea que la meda de 32 sea mayor o
+33:58
+igual a la de 136 vale a la salida a dos velas me va a dar un profit factor de
+34:05
+09 113 116 118 119 vale por lo tanto
+34:11
+aquí estamos de acuerdo que tenemos 1 2 3 4 5 6 7 8 9 10 11 12 13 14 Back test
+34:20
+vale 14 Back test de una única regla Y qué nos va a dar esto nos
+34:26
+retorna que no los explicado Antes evaluate rules nump nos retorna el
+34:32
+dataframe y nos retorna un objeto que es un tipo Jon tipo Jason de sorted stats
+34:38
+vamos a ver lo que es aquí lo tenemos vale aquí se ve muchísimo más bonito todo vale la
+34:45
+primera regla nos da una correlación con el target no que le hemos puesto lo de lo del thr
+34:52
+017 vale Y aquí tenemos todos los profit factors Bueno lo mismo no al final pues
+34:57
+todo este Jason por si acaso pues si lo queréis pasar a un a una Inteligencia
+35:04
+artificial o bueno al final es es un formato que a mí me gusta bastante
+35:09
+trabajar con él y también os lo está retornando vale Así que vamos a calcular el número de de B test que hemos hecho
+35:16
+en esos 2 minutos y vemos que tenemos 1327 774 B Test en dos minutos yo lo veo
+35:26
+bastante bastante bien lo ve bastante rápido Vale y estamos hablando de que
+35:33
+vamos a ver la longitud de dul que es al final nuestro
+35:41
+dataframe con todos los los baces son
+35:46
+9484 reglas de trading o minis sistemas Por así
+35:51
+decirlo que que hemos testeado con este proceso Vale ahora por ejemplo podos
+35:57
+hacer pues podemos jugar con esto no el profit factor de 10 cuál es el que más profit factor de 10 tiene no
+36:05
+bien una vez explicado todo esto eh vamos a ver no cómo cómo cogemos esto
+36:12
+y lo unimos No porque yo he dicho que todo esto lo hacía para luego poder utilizar con algún tipo de de builder No
+36:18
+pues vamos a probar por ejemplo esta arregla no medida de32 mayor o igual a 136 nos venimos aquí a strategy one
+36:27
+eh hacemos una nueva una nueva estrategia que se hace
+36:34
+así quien no sepa hacerlo pues se puede mirar cualquier tutorial por internet es que están gratuitos eso es una entrada en short
+36:41
+por lo tanto nos vamos a cargar los longs el activo en cuestión es Libra
+36:50
+neozelandés que la tenemos por aquí h12
+36:58
+vale el periodo que he seleccionado 2017.0 vale Y luego
+37:09
+2019 vale Perfecto entonces vamos a Añadir la primera condición vale hemos visto la media
+37:16
+132 aquí tenemos ves Esto es lo bueno de los builders no que puedes [ __ ] aquí te haces la media De cuánto
+37:24
+de 132 mayor a 36 vamos a
+37:31
+ello es mayor o igual bueno el igual creo que es bastante improbable
+37:43
+A6 aquí vale vamos a ver cuál es la
+37:48
+exposición óptima son 30 vale la exposición óptima es de 30 vamos a poner aquí exit Bars va salir en tantas barras
+37:58
+vamos a [Música] ver lo
+38:05
+tenemos 20172 mayor o igual 36 he puesto bien
+38:14
+No aquí me está fallando algo sea cosas del
+38:19
+directo vamos a probar otra esto Ah no está bien no ya está
+38:27
+está correcto si el profit factor era abajo Igualmente que tenemos aquí un profit factor de 133 correcto si sí Sigo
+38:37
+yo que me me he liado vale aquí por ejemplo tenemos esta que es está
+38:42
+ordenado por project factor Vale ahora explicaré no un poco esto si esto son reglas que yo saco Vale y podéis decir
+38:48
+bueno esto induce a una sobre optimización Pero bueno hay que ir un poco más allá en todo esto vale también
+38:54
+lo voy a explicar vamos a ver aquí adx de 10
+39:00
+periodos igual a número
+39:06
+45 14
+39:15
+vale aquí si ordenamos por si ordenamos aquí por profit factor que es lo que
+39:20
+hemos hecho vale pues aquí la tenemos no un profit factor de 652 evidentemente esto no es no es realista no habría
+39:26
+falta haría falta unos test de robustez haría falta una metodología haría falta muchas cosas vale pero aquí lo tenemos
+39:34
+vale 6.9 bueno vemos que esto correlaciona y bien eh Bueno
+39:42
+pues aquí tenéis un motor de extracción de reglas que Considero que es muy muy
+39:50
+rápido y casi todos los equipos pueden eh pueden utilizarlo pueden lanzarlo
+39:56
+para que para que lo podáis trastear lo podáis mejorar como he dicho Aquí se
+40:02
+hacen todos los cálculos vale en en la función de prer tool chunk aquí podéis
+40:08
+poner Shark ratio podéis poner un montón de cosas vale Ya os digo que con npai no
+40:14
+va a a penalizar en absoluto el rendimiento a lo mejor unos pocos segundos Pero bueno en cómputo Total no
+40:21
+va a ser ninguna locura también se puede paralelizar mejor o sea más quiero decir
+40:26
+gente que seguramente tenga más cores va a poder sacarle mucho más rendimiento y bueno
+40:32
+eh aquí qué conclusiones hemos sacado de todo esto Pues que mejoramos la mezcla
+40:38
+de reglas que que tenía strategic One porque tiene la problemática que os he explicado al
+40:45
+principio y también solucionamos el supuesto problema del out of sample
+40:51
+eh que tiene también este tipo de de builders no entonces aquí aquí os
+40:58
+presento una serie de futuros retos no que es Añadir más condiciones replicables qué significa yo os he
+41:03
+puesto una serie de condiciones de de trading que correlacionan perfectamente una a una probada con con strategic One
+41:11
+al final Supongo que utilizan librerías muy similares pero se pueden poner un montonazo más de comportamientos de
+41:17
+Mercado os he puesto indicadores técnicos bastante básicos podéis poner muchísimas cosas más o sea esto está
+41:23
+abierto a a que cada uno coja y y lo Lo replique eh a su manera y evidentemente
+41:30
+lo mejore luego añadir validaciones Como por ejemplo la validación sv3 eh super
+41:36
+importante A mi parecer no porque ahora ahora digo vale Yo puedo tirar aquí un millón de Back Test en 2
+41:44
+minutos Pero luego a todo esto tendréis que añadirle un periodo de train un
+41:50
+periodo de Test y y un periodo de validación no como
+41:55
+como como marca la metodología o bueno simplemente un periodo de train un periodo de TR de Test aquí ya lo que lo
+42:03
+que prefiera cada uno a mí el que más me gusta sv3 pero bueno Eh ya también
+42:08
+depende de cada persona de cada gusto y luego una validación de metodología que eso bueno os hago un poco de de spam a
+42:17
+mi a mi ponencia en robot Trader que para mí es lo más importante no una vez yo tengo eh una estrategia tengo que
+42:24
+validarla no tengo que validar la metodología pero no me sirve de una no con esto os abro la puerta que podáis
+42:30
+hacer millones de estrategias y podáis validarla masivamente y Qué significa
+42:36
+esto significa lo siguiente significa que si si tenéis un proceso que mina
+42:42
+estrategias y hace una serie de comprobaciones en un periodo por ejemplo de de de Test vale por ejemplo
+42:49
+estabilidad no y luego en validación os funciona bien un 80% de
+42:56
+las veces ten es una una una metodología validada vale esto vuelvo a repetir
+43:01
+expliqué mucho más a conciencia en mi ponencia de de la entrega de premios de robot Trader Pero bueno hago también
+43:08
+aquí un apunte para para que para que esto se tenga en cuenta yo os cedo todo
+43:13
+el el código para que os abro la puerta a todos aquellos que que no no sabéis o
+43:19
+que o que os veis un poco eh limitados No En cuanto a a
+43:27
+a tecnología o a desarrollo para que podáis eh mejorarlo podáis hacerlo
+43:34
+vuestro pero es muy importante que detrás de todo esto hagáis una metodología correcta una metodología que
+43:41
+podéis eh replicar de autores famosos o podéis inventar la propia vuestra vale
+43:47
+pero es muy importante y ya está Eh bueno no sé cuá no sé si hay muchas
+43:53
+dudas si no eh ahí está mi Ahí está
+44:00
+todo al final me he decidido y muy bien
+44:06
+Sí sí Alexander pregunta cuál es el criterio para determinar las óptimas Y cómo aseguras que este óptimo no es un
+44:12
+pico dice para arba por ejemplo sma 132 mayor que la sma 136 Cuál es el precio
+44:19
+de entrada vale
+44:27
+Cuál es el precio de espera Eh vale Cuál es el criterio para determinar las óptimas el el para determinar las
+44:34
+óptimas el criterio si no me equivoco si no me equivoco es el factor de correlación pero por ejemplo lo podéis
+44:40
+cambiar podéis poner un profit factor podéis poner cualquier tipo de de métrica al final no no está abierto a
+44:47
+modificación ahora mismo tengo la correlación con el target pero se puede cambiar Si simplemente es es está el
+44:54
+objeto ahí puesto para para que se pueda cambiar para la por ejemplo sma Cuál es el precio de entrada es el cierre las
+45:02
+comisiones Miguel las comisiones se tienen en cuenta parcialmente vale
+45:08
+veréis en la librería al principio que tengo tengo quitado lo que las
+45:13
+comisiones como las he gestionado ha sido muy
+45:19
+rudimentarios originalmente es le quito unos pips O sea si es en short le sumo y
+45:27
+si es en en loog le resto básicamente es como bueno no no pagas no hay comisiones
+45:32
+pero sí hay menos recorrido del precio vale
+45:38
+m las limitaciones que has comentado que tiene strategy kanan se han corregido en las versiones actuales 141 142 lo
+45:45
+desconozco lo desconozco John No lo sé yo simplemente hice esto cuando 100% no
+45:52
+estaba corregido así Ahora mismo Te mentiría no lo sé
+45:59
+Cómo ensambles varias de Esas reglas yauma eh Bueno pues tenéis eh el código
+46:07
+base para hacer eh la mezcla de reglas rápida ya lo tenéis simplemente lo que
+46:15
+Considero que tendríais que hacer es volver a [ __ ] el mismo mezclador de reglas y aplicarlo sobre sobre las que
+46:23
+ya hay o sea volver a a repetirlo otra vez vez el proceso Disculpe me refería
+46:30
+Solo que si no te cuadraba el profit factor por el tema de comisión Ah vale vale vale Ya entiendo que miguela
+46:37
+comenta que dice Discúlpame me refería solo a que si no te cuadraba el profit factor por el tema de comisiones es
+46:43
+posible es posible que un desfase por eso algún recurso que recomendarías para
+46:48
+adentrarse o profundizar en esta metodología Gracias por compartir todo esto algún recurso que para intentarse
+46:56
+profundizar en esta metodología Pues mira yo el tema de ru stration lo empecé
+47:05
+por la ponencia que hizo Carles p zivela de con hueca ahí es como pum La mente me
+47:11
+hizo un un tuve mental breakdown que se dice y ahí empecé a profundizar un poco
+47:17
+y vi obras Como por ejemplo la de Kevin davy y demás autores así Ahora mismo eh
+47:23
+kaufman también tiene tiene algo pero no hablan no hablan exactamente de esto
+47:29
+pero sí que puedes [ __ ] varias ideas para para para esto un un autor que
+47:35
+hable exclusivamente de roll Station no te sabría decir ahora mismo vale hay alguna
+47:42
+regla hay alguna forma de armar cada regla con python Java etc etcétera
+47:49
+Espera que es que el chat est y luego insertarlas para probarlas con strategy quant
+47:57
+A qué te refieres Fernando No entiendo el tema de
+48:27
+puedes cogerlo Vale y ver có cómo lo está montando strategy qu que al final utiliza Java Vale y ver cómo pone las
+48:35
+reglas y demás que tienen como una nomenclatura Y sí que puedes hacer como una especie de traductor entre entre lo
+48:40
+de python y lo strategy Y sí que se puede llegar a hacer Cuál es el número mínimo máximo de
+48:46
+condiciones de lógicas de cada regla tiene una
+48:51
+condición o sea es una comparación de es lo básico es es un comportamiento de
+48:57
+Mercado únicamente luego esto con el mismo motor que que os que os que os
+49:02
+dejo Ahí podéis hacer el ensamblado que dice ya má la regla de la regla vale
+49:07
+Pero esto ya Loy lo dejo para para que lo hagáis vosotros el número de operaciones eh las tienes en cuenta si
+49:15
+se tienen en cuenta también qué
+49:25
+más que quiera puede abrir el micrófono si quiere para hablar directamente con
+49:30
+con al Exacto Pues voy a dejar aquí también mi
+49:36
+Muchas gracias a todos evidentemente por estar aquí escucharme y a los futuros oyentes dejo aquí mi correo electrónico
+49:44
+Instagram y Telegram para cualquier consulta barra colaboración estoy
+49:49
+abierto a a ello Cuántas el número de oper
+49:55
+número de operaciones las tienes en cuenta cuántas Eh bueno no es que si yo no pongo ningún filtro de número de
+50:01
+operaciones simplemente eh se tienen en cuenta a la hora de calcularlas es un es un
+50:09
+eh es un atributo más de del Back
+50:16
+test Alan Dímelo Hola dos conocida Sí digo no
+50:23
+Felicidades tío Felicidades por la ponencia eh yo creo que nadie fue jamás tan lejos
+50:29
+analizando las tripas de strategic One como tú me parece una pasada lo que has
+50:34
+desarrollado pero lo que me parece más extraordinario tío es que lo compartas
+50:39
+así esto es tan poco habitual Me parece muy salvaje tío así
+50:45
+que muchas gracias y nada encantado de de de haber visto la ponencia tío Muchas
+50:51
+gracias y felicidades Gracias a ti Esto es lo que lo que comentaba con edo al principio no entre
+50:57
+telones que le decía que el mundo del triner algorítmico pues es un poco
+51:02
+receloso no en cuanto a compartir bueno yaom Tú eres el primero que siempre has compartido todo
+51:08
+y también un poco el ejemplo no que has marcado a la hora de de compartir desde
+51:13
+tus primeros hallazgos hasta bueno todo lo que has hecho ahora y he dicho vamos
+51:19
+a dejar aquí un un pequeño legado a la comunidad y sobre todo abrir la via al
+51:25
+ru stration pero a grosso modo ya no para que para que la
+51:30
+gente pueda pueda tener un motor guapo de de de creación de reglas de trading Y
+51:37
+eso Y seguramente vaya a haber personas que lo vaya a mejorar que es ese es el
+51:43
+objetivo no el objetivo es he creado un esqueleto vale básico de mezcla de reglas rápida
+51:49
+eh que yo no conozco yo he buscado y he estado vamos muchísimo tiempo detrás de
+51:56
+algo así al final Bueno me lo tuve que hacer yo y bueno si alguien conoce de algún algoritmo Yo sé que hay algoritmos
+52:03
+de Back test por ejemplo que funciona super bien van superfos y hiper rápidos pero no de no de no de ru stration no
+52:10
+mezcla de reglas no de trading e al final esto es el principio no es el
+52:16
+principio de de un de un builder eh o de un genex y me gustaría que que
+52:22
+muchas personas pudieran iniciarse no en en esta filosofía de stration gracias a
+52:28
+a a esto que voy a compartir así que bueno eh A ver por ahí un abrazo s un placer
+52:36
+Muchas gracias Miguel Gracias por compartirme una ponencia Enhorabuena Gracias a todos
+52:42
+como lo he dicho el código lo dejaré estará en el enlace de del vídeo de
+52:48
+YouTube así que bueno ya los que hayan estado aquí entre en el vídeo de YouTube pues ya van a dar unas cuantas views más
+52:54
+solo por por el código y lo he dicho que si alguien tiene alguna sugerencia
+53:00
+colaboración o me quiera comentar cualquier cosa tenéis mis eh enlaces de
+53:05
+contacto aquí y estoy encantado de poder tener la oportunidad no y tener la voz
+53:11
+de de poder compartir con todos vosotros eh trabajo que me ha llevado bastante
+53:16
+tiempo en hacer y sobre todo de hacer rápido que es algo que Bueno tuve tuve
+53:22
+ahí mi mis que verdaderos de cabeza y seguro que muchos de vosotros lo Vais a mejorar y los que los que estáis Así un
+53:28
+poco más pez y tal pues con lo dicho con los asistentes que hay hoy en día podéis
+53:34
+pasarle el código pu tratar de entenderlo y Y eso Y si tenéis alguna duda no dudéis en en comunicármelo
+53:44
+muy bien Alan seguro que has evolucionado tú por tu cuenta es todo
+53:50
+este toda esta metodología puedes darnos alguna pincelada de de de por dónde van
+53:57
+los tiros en tu caso por supuesto Mira eh el lo que yo tengo avanzado por por mi
+54:05
+cuenta lo puedo explicar sin ningún problema tengo Eh muchas más reglas personalizadas luego tengo una aviación
+54:13
+de metodología mediante sv3 que es lo que he dejado ahí remarcado y para que
+54:19
+para que la gente pues lo lo pueda llegar a hacer No que al final es bueno yo saco una regla no pero luego pues
+54:25
+puedo poner un periodo por delante puedo poner un periodo por detrás eh Y puedo ver si se comporta de una
+54:32
+forma similar o no y a través de bueno de una serie de de cálculos que cada al
+54:37
+final cada Trader pues es es un mundo no pueda puedes llegar a buscar pues unos
+54:43
+parámetros de estabilidad y y desarrollar una una un algoritmo digamos
+54:49
+no que que te garantice que si tú en un periodo de de train por así decir lo que
+54:55
+sería pues esto no ahora cojo no y digo Bueno todas estas reglas hay una que tiene pues lo voy a filtrar por profit
+55:02
+factor la voy a filtrar por sharp lo voy a filtrar por lo que sea por lo que me dé la gana No pues puedes aplicar una
+55:09
+serie de de de condiciones ideológicas para ver que si un periodo
+55:15
+pues más adelante un periodo más atrás o mezclar periodos vale tiene un comportamiento similar Vale pues es más
+55:21
+probable o no que se comporte mejor en periodo de validación y a través de de de esa metodología puedes llegar a hacer
+55:30
+una validación de todas las reglas al final son filtros no es
+55:36
+filtrar o podéis utilizar también algoritmos de Machine learning que también está preparado para que para que
+55:41
+qui quien quiera pueda pueda usarlos y ahora pues eh con datos también No ahora
+55:48
+por ejemplo martic Stein que lo he visto también también nos ofrece una herramienta excelente de limpieza de
+55:53
+datos seguramente los datos de de educas copy Eh no estén tan bien como los suyos
+55:58
+Así que cada vez no salen más herramientas eh disponibles para todos Que que nos van a ayudar a la hora de de
+56:06
+crear estrategias eh algorítmicas Y me gustaría ser uno más no de los que puede
+56:14
+aportar un granito de arena para que todo esto sea posible gracias a vosotros Martí muy
+56:21
+bien Ah también habías comentado que ibas a explicar cómo traer los datos de
+56:27
+dukascopy pero no sé si eso ya Ah sí sí Disculpa mira aquí sí si nos vamos aquí
+56:33
+a la la herramienta strategic One Vale Nos vamos a Data manager aquí hay un
+56:39
+montón de de tutoriales de los propios stratan de cómo de cómo se hace No pero básicamente es damos aquí duc si en este
+56:48
+caso ducas copy vale podemos aquí seleccionar todos los activos que
+56:53
+queremos vale descargar yo recomiendo que sea en M1 porque como sean ptic va a ocupar un
+56:59
+montón de gigas y no es necesario no en M1 Data vale y le damos a save Entonces
+57:05
+se guardarían todos los activos y luego una vez eh Tienes el activo lo clonas
+57:10
+vale eh aquí clone to Time zone y lo tienes
+57:15
+que que clonar al al a la zona horaria de tu broker que
+57:21
+normalmente todos los Brokers utilizan utc +2 con dsty yo pongo Jerusalén vale
+57:26
+Mira ya es la gracia de poner el la fecha de Jerusalén pero bueno eh
+57:32
+básicamente esto se se hará una copia vale de desactivó Entonces ya tendréis los datos a M1 de con el uso horario de
+57:40
+vuestro broker no una vez tengáis eh esto descargado vale le dais a update
+57:47
+vale clicas a update Entonces se actualiza todo no eh voy a hacer aquí Bueno voy a por ejemplo voy a update
+57:54
+Este seleccionado vale aquí se os descargaría desde cero vale Pero ahora pues se va a descargar lo que lo que
+58:01
+queda Perdona que no le he dado al Principal vale aquí veis pues hace un
+58:07
+repaso de todo no y y os actualiza los datos hasta el día de hoy Y entonces Os
+58:13
+actualiza este y os actualizará también el la el clon vale automáticamente Y
+58:18
+entonces en el clon le dais a export export tu csv vale Y aquí simplemente ponéis el
+58:25
+time frame que queráis trabajar del activo que queráis vale y le dais a export y esto os os exporta un csv tal
+58:34
+cual Ah importante aquí poner las columnas vale es importante poner el open el High el open price el High el
+58:42
+low y el close porque no están añadidas vale simplemente seleccioná Open High
+58:48
+low y Close Vale y abajo pues lo mismo vale tenéis el volumen el open el High
+58:57
+el low y el close y les dais a exportar y automáticamente es os crea un csv que
+59:03
+esto es lo que lee Pues el Script de python que tengo pero bueno seguramente en herramientas futuras como como la de
+59:11
+Mart esto sea muchísimo más fácil y los datos como digo estén mejor no pero bueno ahora mismo Pues es lo que tenía
+59:17
+vale también tenéis Dark winex para bajaros en en en la plataforma y eso eh
+59:26
+luego la licencia es gratuita Pues si queréis hacer una prueba vale con exti pues os dan una licencia un trial de 14
+59:33
+días que podéis probar Aquí también por si únicamente os queréis Descargar
+59:41
+datos Y ya está eso sería si es verdad es cierto Edu buen apunte que iba a
+59:48
+explicar cómo descargar los datos que es importante también Ju Jos te dice grandísimo trabajo y muchísimas gracias
+59:55
+por por compartir dice confiar en un builder desde cero no creo que sea lo más adecuado Pero si son bastante útiles
+1:00:01
+para sacar filtros que mejoren una ventaja o Pauta incluso las reglas extraídas por tu
+1:00:06
+programa incluso las reglas extraídas por tu programa para solucionar el aut sample siempre hay que hacerlo separado
+1:00:12
+del ample en tu proyecto correcto un comentario que di correcto y
+1:00:20
+hay nada lo demás son
+1:00:26
+G Mariano cómo estás aprovecho ahí la oportunidad también de agradecer a Alan
+1:00:32
+y obviamente tomarme el atrevimiento hacer un par de consultas preguntas etcétera etcétera
+1:00:38
+s primero Bueno me siento muy alineado en la metodología en en el approach que
+1:00:46
+has tenido para para para la construcción de reglas la primera pregunta que tengo tengo realmente
+1:00:53
+montado est todo mi pipel python como tal en un momento determinado tú decides
+1:00:59
+este montar parte del mismo en en strategy qu Cuál es la lógica en el cual
+1:01:06
+no continuas con tu línea en python y montar todo el resto del pipen en python
+1:01:12
+y continuar por por qué esa decisión de diseño comprendo muy buena pregunta muy buena
+1:01:19
+pregunta eh la decisión la tomé precisamente por un motivo y es Es que
+1:01:26
+no me gusta en absoluto programar eh Para mql metatrader y lo y lo que quería
+1:01:34
+utilizarlo Como por ejemplo para participar en robotrader o para por ejemplo para cuentas de fondeo para
+1:01:39
+darwinex lo quería metatrader lo necesitaba metatrader no entonces eh claro cuando yo monté todo esto no
+1:01:46
+existían asistentes como chat gpt como dipsi que a lo mejor le dices Oye pues móntame una dos reglas o tres no y no y
+1:01:53
+no no existía entonces eh es un es algo que mira que que me he metido no a
+1:01:59
+programar también en mql pero pero nunca me ha gustado es algo que nunca me ha
+1:02:05
+gustado Y sí que Considero que que strategy Kan tiene eh potencia o sea se
+1:02:11
+le puede sacar mucho juego sí que hubo una época que quería seguir la pipeline por por python puro no hasta el final
+1:02:18
+pero pero no al final Mira tome esa vertiente y seguí hasta el final Probablemente lo haga en el futuro eh
+1:02:25
+Muy buen perfecto Perfecto perfecto Sí ahí tengo también mis pruritos con con
+1:02:30
+con con el lenguaje propietario de cada de cada software la voy a usar voy a
+1:02:36
+tener varias preguntas la la otra es eh uno uno de los puntos más importantes es
+1:02:42
+elegir estrategias robustas autos sample Okay Cuando digo robusta es tratar de
+1:02:48
+reducir el el overfit que te puedes encontrar este eh Perdón en ample
+1:02:55
+elegirlas sample reducir el overfitting que te puedes encontrar tanto en en out sample o obviamente en real Sí el punto
+1:03:03
+de vista más metodológico no tanto tecnológico Cuál es la lógica en el cual capturas o o priorizas Esas reglas que
+1:03:11
+que son robustas en INS sample como con el código actual dices
+1:03:17
+con el código que comparti no no metodológicamente có cómo eliges reglas
+1:03:24
+que no sea un producto del Azar sí producto que encontraste una combinación porque siempre tenemos ese riesgo en los
+1:03:31
+builders o en los extractors eh que no sea un producto del Azar Cuál es un poco el el el el el la
+1:03:40
+lógica donde dice voy a seleccionar esta para sí efectivamente pasarla a sqx vale Yo más que una regla en
+1:03:48
+concreto lo que aplico es eh una metodología lo que hago aparte
+1:03:54
+aparte del mon test el famoso monkey test que que ha explicado tantas veces
+1:03:59
+ya antolí de una regla para ver que supera al azar que eso podrías decir Bueno sí tú le lanzas un por ejemplo un
+1:04:06
+monkey test a una regla Sor optimizada y es mejor que el monkey test correcto pero lo más importante vale es eh tener
+1:04:14
+una estructura de filtros Ajá con el cual yo hago pruebas en ample y hago
+1:04:21
+pruebas en varios out of sample no en uno en varios out of sample y le pido una serie de condiciones Como por
+1:04:26
+ejemplo una de ellas puede ser estabilidad Vale entonces aplicando esos
+1:04:32
+filtros Eh Esto le llamo para que se entienda fogones y me explico vale yo
+1:04:40
+digo pues por ejemplo eh tengo esta regla que la he generado
+1:04:46
+en INS sample no y luego tengo autos sample 1 autos sample 2 autos sample 3
+1:04:52
+bien Si yo le pido eh una estabilidad de profit factor x por ejemplo en INS
+1:05:01
+sample versus auto sample 1 me mejora esa estabilidad en autos sample
+1:05:08
+2 sí o no y si y mejoran autos sample 3 entonces lo que hago es lo que hago es
+1:05:14
+es un proceso al final que lo tengo lo tengo automatizado vale que busca la mejor combinación vale de fogones que yo
+1:05:21
+aprieto por aquí y mejora por el otro lado vale porque luego tengo la la validación Por otra parte vale eso es
+1:05:28
+otro periodo que yo no toco ni le pido ni le estoy pidiendo que mejore ni empeore simplemente vale es un algoritmo
+1:05:35
+que utilizo para cada activo que se auto optimiza para cada activo y para cada extracción de reglas con el cual yo
+1:05:41
+puedo pedirle una serie de condiciones que cumpla respecto al ample versus los
+1:05:47
+diferentes out of samples Como por ejemplo también tengo en cuenta regimenes de mercado si han sido iguales
+1:05:52
+si han sido peores una serie de de de condiciones Entonces me dice es como que
+1:06:00
+al final me da una serie de de reglas No pues tienes que pedirle tanta estabilidad de profit factor tienes que
+1:06:05
+pedirle tanto de de Win rate entonces luego cuando tiro todo el test ese
+1:06:11
+haciendo todos esos filtros que sería como una query Por así decirlo al final del todo veo cuántos pasan validación
+1:06:18
+Claro gracias a tener como como tú tienes eh un un r un rule extractor
+1:06:24
+gigante yo puedo aplicar eso es lo que siempre he explicado no lo expliqué también en la ponencia de robot Trader
+1:06:30
+que le llamo la validación masiva de de metodología No no es lo mismo que yo te
+1:06:36
+diga Bueno si yo toco esto y pido est habilidad por aquí Win r profit factor
+1:06:42
+sharp y número de por ejemplo de perdedoras consecutivas número de ganadoras consecutivas una estrategia y
+1:06:48
+me pasa validación tengo una pero con esto puedo saber qué pasa en 100000 vale
+1:06:54
+si en 10000 qué pasa esos filtros las 10000 están pasando la validación Ya sé
+1:07:00
+que tengo una buena metodología masiva de validación no sé si me he explicado
+1:07:06
+es perfectamente porque tengo algo muy similar Alan Así que estoy estoy al muy
+1:07:12
+muy similar el tema de de aplicar como tú dices regl de estabilidad de filtros
+1:07:18
+a diferentes tipos de métrica a uso de tu a uso de tu este de tu idad
+1:07:26
+comentaste que obviamente hay un Back test que se realiza entiendo que tienes un motor
+1:07:32
+propio en python o o generaste está no no utilizo ninguna librería está
+1:07:39
+en el código es un btest muy muy muy reducido y muy sencillo que hago simplemente como ya tengo todos los
+1:07:45
+retornos calculados desde el principio del dataframe que eso lo hace rapidísimo simplemente hago una una resta y ya está
+1:07:52
+o sea es como dme no no no vi el código me imagino que debe estar numba de
+1:07:58
+también vale Sí correcto en un pa Sí en un PS Perfecto perfecto Sí y al final es más sencillo no porque estamos saliendo
+1:08:05
+a velas no estamos teniendo ni en cuenta un Take profit un stop bl sol dejo la puerta abierta quien quiera programarlo
+1:08:10
+que que lo pueda hacer perfectamente también se puede hacer Perfecto perfecto última última en
+1:08:17
+final sí de nuevo Agradecido por por por obviamente este el trabajo que que que
+1:08:23
+que expones eh tú sabes tengo ahí publicado algú stack de algo trading con lo cual este seguramente te voy a pedir
+1:08:30
+ayuda para poder integrarlo y dejarlo como parte de un docker que quede obviamente disponible para que cualquiera pueda utilizarlo Sí si si si
+1:08:39
+creo que es parte un poco estoy de acuerdo contigo De que al final uno puede desarrollar para uno pero también
+1:08:44
+tiene Ja también hace un poco lo mismo también de de poder este compartir con
+1:08:49
+el resto de la comunidad que es superimportante Sí muchísimas gracias inci Gracias nada
+1:08:57
+a ti muchas gracias gracias Mariano por las
+1:09:02
+preguntas má más gente que quiera abrir el micrófono y hablar
+1:09:10
+con con el ponente con
+1:09:15
+Alan bueno parece que es ya se acabaron las preguntas Ah ha
+1:09:23
+acabado con ellos muy bien Alan Pues voy a dejar de grabar
+
+
+
+
+Rule Extraction: Minería de Reglas de Trading- Jaume Antolí, Quantdemy
+Vale pues Buenas tardes o buenos días dependiendo donde estéis a todos hoy
+0:07
+tenemos con nosotros a jaume antolí que nos va a hablar de rule extraction minería de reglas de trading estábamos
+0:14
+hablando antes que que ha seguido un camino para mí el idóneo empezó haciendo
+0:22
+el el curso experto de la upm de trading algorítmico en el 2015 2016 curso 2015
+0:30
+2016 ya ya ya ha llovido luego participó
+0:35
+en robot trer 2023 donde quedó en segundo lugar y ahora ya pues está de
+0:43
+ponente está es el camino
+0:50
+deseado [ __ ] conocimiento y luego generar Conocimiento es la la esencia de
+0:55
+robot Trader compartir conocimiento y que la comunidad de robot raer pues se
+1:01
+vaya enriqueciendo toda ella y dicho esto pues vamos a empezar
+1:07
+eh Cuando quieras jaume Bueno gracias Eduardo estoy encantado de estar aquí
+1:13
+porque como has explicado tengo una ya larga relación con robot Trader me hace especial ilusión estrenarme como como
+1:20
+ponente espero que veáis todos bien lo que sale en pantalla que básicamente ahora mismo es el título de la de la
+1:27
+ponencia que es rule extraction minería de reglas de Trade cht Plaza soy yo antes de empezar una
+1:33
+pequeña presentación de rigor yo soy Trader algorítmico según el posgrado de
+1:39
+la upm también soy científico de datos según un máster de la W que he hecho más
+1:44
+recientemente Aunque en su momento hace ya dos décadas y pico empecé física y
+1:49
+acabé empresariales en la universidad de Barcelona tras ello me tiré 14 años en banca y ahí pues a raíz de hacer el
+1:57
+posgrado de la upm pues ya empecé a hacer tring mímico y tal entonces
+2:03
+eh Como os decía llevo una larga una larga relación con robot empecé como
+2:08
+estudiante como ha dicho Eduardo en 2016 aquí el título que lo recibí recientemente Aunque Hacía un montón de
+2:15
+tiempo Eh me hizo especial ilusión me preguntan con frecuencia sobre la formación y siempre digo lo mismo la
+2:21
+hizo Iván eserman actual campeón del mundo de de trading con futuros Vale
+2:26
+entonces empecé como estudiante es como una trilogía luego como concursante es el el premio del segunda segundo puesto
+2:34
+en 2023 y ahora estoy aquí como ponente y la verdad que impone un poco porque
+2:40
+veis la ponencia anterior la hizo Roberto Marcos la siguiente a la raser y Sánchez que han sido dos grandes
+2:45
+referentes de los cuales me he tragado un montón de charlas aquí en robotrader dos referentes de
+2:51
+hecho la taza de seri Sánchez no sé si se ve es mi taza de la suerte Por así decirlo eh Bueno pues allá vamos eh Por
+2:59
+qué os voy a hablar de rule extraction veréis os pongo en pantalla el palmarés de robotrader precisamente de los
+3:05
+últimos años he marcado en verde eh participantes que han hecho podium Eh
+3:10
+pues esto las últimas cinco ediciones 2020 ganó Carlos p sagiv bela que ya
+3:15
+hecho varias ponencias aquí en robotrader eh Muchas de ellas relacionadas precisamente con rule extraction él utilizó una aplicación
+3:22
+comercial llamada eh alphadvisor o utilizaba en su momento y la última
+3:28
+edición la ganó mi colega al an Tom millero y en en la anterior edición la de 2023 yo quedé segundo todos nosotros
+3:35
+utilizando rule extraction Entonces es un es un enfoque o es una metodología que veo que va ganando adeptos además
+3:41
+que últimamente se ha puesto muy de moda se han puesto muy se han hecho muy populares plataformas como strategic One
+3:46
+que en el fondo lo que están haciendo es r extraction Vale entonces para eh Mostrar que esto no es un invento de
+3:53
+yauma sino que es una cosa que va teniendo cierto recorrido y que creo que cada vez tiene más adeptos
+3:58
+eh Por por qué porque tiene ventajas este tipo de de enfoque tiene de rra
+4:04
+tiene varias ventajas primero la interpretabilidad la eficiencia y la significancia Por qué digo
+4:10
+interpretabilidad porque cuando aplicamos r extraction esta metodología conseguimos reglas de este tipo Vale
+4:17
+cuando el de marker está entre este valor y este otro y la otra condición el de marker 5 está por encima de este
+4:22
+valor entonces opera es una regla sencilla de
+4:28
+entender posicion a lo típico que podríamos obtener con un modelo de Machine learning de Deep learning o reinforcement learning que son modelos
+4:36
+de tipo Black Box que se llaman cajas negras que son modelos que no sabemos cómo deciden lo que deciden
+4:42
+e son modelos en los cuales el modelo va tomando decisiones pero tú como ser humano no puedes
+4:48
+interpretar las reglas por las cuales se rigen esos monos esos modelos sin embargo con rule extraction obtienen
+4:55
+reglas de este tipo que son interpretables Al ojo humano de acuerdo
+5:00
+esto obliga a que sean cosas sencillas hay gente que le verá un inconveniente ahí yo lo veo una ventaja a mí me parece
+5:06
+que lo complejo es más frágil algo que es complejo algo que consta de muchas de muchas partes un modelo una máquina algo
+5:13
+muy muy muy elaborado tiene muchas partes puede fallar por muchos sitios diferentes una regla tan sencilla a lo
+5:20
+mejor no es la mejor regla del mundo pero tiene cierta robustes es decir tiene pocas cosas que puedan fallar la
+5:26
+regla es solo esto no Y sobre todo tiene otra ventaja que es eh que hoy en día
+5:31
+con con chpt o la ía de turno tú coges esta regla la copias se la pones a chpt
+5:36
+y le pides que te la que te haga el código para la plataforma que quieras ya sea metatrader Ninja Trader trad Station
+5:42
+trading viw la que sea en en un minuto tienes el código ejecutable en la plataforma de acuerdo Entonces para mí
+5:50
+la interpretabilidad sí que es una cosa importante una ventaja que yo le veo Clara luego la eficiencia aquí
+5:56
+eh os tengo que explicar una historia Esta es una historia real yo hice el posgrado de la upm me vi un montón de
+6:03
+charlas de sergi de sergi Sánchez de Roberto Marcos de Alberto Muñoz Andrés García de tantos y tantos ponentes que
+6:10
+han pasado por robotrader y me animé a poner una estrategia en real en aquella época yo tenía trabajo Estaba en la
+6:16
+banca e acababa de ser padre no tenía mucho tiempo y tardé un montón en desarrollar
+6:22
+un portfolio de sistemas pero un montón que decir más de un año tardé muchísimo cuando por fin lo tuve armado lo puse a
+6:28
+correr en real además esto lo que vemos en pantalla es un año entero va de enero a enero empecé pequeños altibajos
+6:36
+durante el enero fui Ajustando ahí cositas pero cuando llegué a mayo llevaba un 30% Y pensé Wow Esto es lo
+6:42
+mío yo me retiro si en 5 meses llevo un 30% cuando acabe el año esto ya me he forrado y y y si meto aquí todo mi
+6:50
+dinero en pocos años ya me retiro eh pero efectivamente lo que pasó después es que empezó a empezó a caer a caer a
+6:58
+caer y al final Perdí todo lo que había ganado me quedé plano y decidí una cosa que creo que tuvo fue un acierto por mi
+7:05
+parte que es parar y aprender ahí decidí que tenía que aprender a programar con lenguajes Más allá de las plataformas
+7:11
+como python en mi caso y posteriormente hice el posgrado de Ay el posgrado el
+7:17
+máster de ciencia de datos porque quería tener más herramientas para primero entender qué había pasado aquí Cómo
+7:22
+podía ser que algo que había funcionado de golpe bueno de golpe no es Pa latino Pero cómo va dejando de funcionar esto
+7:28
+En aquel momento no lo entendí día hoy ya lo puedo explicar pero sobre todo lo que me preocupaba es si me he tirado un
+7:35
+año haciendo una estrategia o un portfolio de de sistemas de trading y me dura solo 5 o 6 meses
+7:42
+cuando deje de funcionar por la por la razón que sea no voy a poder reponerlo es lo que me pasó Aquí yo entre el
+7:48
+trabajo la familia tal yo no tenía tiempo esto veía que se iba a pique que se iba para abajo pero yo no tenía manera no tenía tiempo material de poder
+7:55
+volver a rehacer todo ese trabajo que había tardado tanto no era eficiente era training algorítmico pero mi metodología
+8:01
+entre comillas era bastante artesanal bastante manual de buscar los sistemas uno a uno de optimizar era un proceso
+8:08
+bastante poco eficiente entonces ru exra es suficiente siempre cuento la misma
+8:14
+anécdota cuando yo conocí al antom millero el último canal de roboter que es colega eh fui a su casa a Barcelona
+8:21
+Porque vivo es de la misma ciudad que yo Barcelona y fui a su casa en su en su despacho tenían montado ahí un montón de
+8:28
+servidores de pantalla de ordenadores y tal le dio la tecla y aquello empezó a
+8:33
+escupir reglas de training pero pero como las como se ven las películas de hackers aquellos que salen en la
+8:38
+pantalla un montón de numeritos y tal de una eficiencia brutal es decir vaya si yo tuviera que todas estas reglas que
+8:45
+eran decenas y decenas y decenas tuviera que elaborarlas con mi método artesanal
+8:50
+no me daba la vida entonces por eso digo que es un método s eficiente que te permite
+8:55
+eh generar reglas deing digamos de una manera bastante bastante rápida no me hubiera pasado esto que me pasó aquí no
+9:03
+cuando hubieran empezado a caer el portfolio lo hubiera puesto lo hubiera podido reponer entero si hace falta Vale
+9:09
+entonces para mí la eficiencia es el punto fuerte del rule extraction y por último la significancia a qué me refiero
+9:15
+con esto cuando tú tienes esta capacidad para generar tantas muestras
+9:21
+eh volviendo atrás cuando yo hice ese portfolio que os mostraba antes A lo
+9:27
+mejor ahí habían 15 sistemas de trading no me acuerdo acuerd yo ahora y tardé un año y pico porque iba haciendo prueba
+9:32
+error iba corrigiendo optimizando cambiando probando filtros salidas etcétera No tardaba mucho pero claro que
+9:40
+a lo mejor que tenía había cogido esos 15 entre A lo mejor entre unos 50 pues unos 50 sistemas de trading no es
+9:47
+significativo no es una muestra significativa sin embargo con ru extraction Yo me puedo plantar con algo
+9:52
+como lo que vemos en pantalla que son 10000 sistemas de trading 10000 reglas cuando tú ya tienes ese volumen Gracias
+9:58
+a cuando tú ya tienes ese volumen de reglas te puedes empezar a plantear cosas metodológicas del tipo Sí por
+10:06
+ejemplo y a romper algunos dogmas por ejemplo lo que vemos en pantalla es un gráfico que compara la relación del sqn
+10:14
+que es el System Quality number que es una métrica típica de trading creo que de vanzar creo que se llamaba el autor
+10:20
+que básicamente es el ratio de shar multiplicado por la raíz cuadrada del número de operaciones Vale entonces yo
+10:27
+hago 10,000 eh reglas de trading con ru extraction eh calculo el sqn en el periodo de Test
+10:36
+y luego comparo si ese qn es esa métrica en el periodo de Test tiene alguna
+10:41
+correlación con lo que sucede en Forward con lo que sucede a futuro y como vemos en pantalla ninguna es decir No es
+10:47
+cierto que cuando tú tienes un montón de sistemas de trading diferentes los que tengan mejores métricas en test sean los
+10:53
+que se vayan a comportar mejor a futuro Porque si fuera así aquí tendríamos observaríamos un gráfico tipo típico de
+10:59
+una correlación observaríamos como una línea así ascendente y con poca dispersión y sin embargo vemos una una
+11:08
+representación clásica de lo que es el azar no existe ninguna correlación entre el sqn en test y el sqn en Forward
+11:15
+ninguna correlación pero ni del sqn ni del profit factor ni del ratio de shark
+11:20
+que tiene un premio Nobel ni del k ratio de ninguna métrica de estas clásicas Esta es una de las primeras cosas que
+11:27
+que me chocó más no cuando parce de investigar Pero bueno no era lo que me quería entretener lo que quería decir es que Pro extraction tiene estas tres
+11:34
+ventajas interpretabilidad eficiencia y significancia v te permite
+11:40
+hacer muchas muestras en base a esa volumen de muestras probar hipótesis sobre la metodología de acuerdo Entonces
+11:48
+si vosotros me decís vale yaum me has convencido esto que es tan eficiente y que te permite generar tantas reglas de trading eh Quiero quiero hacerlo por
+11:55
+dónde empiezo Bueno pues este sería un esquema básico básico básico esto se puede complicar hasta el infinito Pero
+12:02
+esto sería un esquema básico tienes que partir de unas variables las variables en nuestro caso serán indicadores de
+12:09
+indicadores técnicos de toda la vida de trading el rsi el cci el estocástico el Williams los que se te ocurran y además
+12:15
+cada uno de esos indicadores los puedes calcular con un con un Rango de parámetros pues puedes hacer rsi de dos
+12:22
+periodos de tres periodos de cuatro periodos y así tanto como quieras te puedes juntar rápidamente con decenas o
+12:30
+centenares literalmente de variables con ese volumen de variables de alguna
+12:35
+manera tienes que seleccionar aquellas que te van mejor para para minar para para construir reglas Este es el primer
+12:42
+paso el Future selection segundo paso rule extractor necesitas un algoritmo
+12:48
+que te permita generar reglas en base a esas variables que has seleccionado previamente eh dentro del mundillo del
+12:55
+ru extraction riper es un es como un estándar es como el más popular pero podrían ser otros como los decision
+13:03
+tre los árboles de decisión de Machine learning y tal hay varios varios algoritmos eh necesitas alguno alguno de
+13:09
+estos algoritmos que generan reglas para bueno construir los sistemas de trading Y por último validación os decía hace un
+13:16
+momento que debido a la eficiencia de este enfoque generas un gran volumen de reglas posibles de alguna manera tienes
+13:23
+que seleccionar aquellas que tienen más probabilidades de funcionar a futuro y como os he dicho cuando manejas este
+13:30
+volumen de reglas ves que las métricas en test no son útiles en este sentido
+13:36
+Vale entonces cuál fue mi primera aproximación pues allá en 2020 cuando
+13:41
+Carlos pagela ganó robot me vi su charla hablaba de de alp advisor hablaba de de
+13:48
+la escuela de Juan malmar y entonces Seguí un poco el patrón que yo pude
+13:53
+entender de lo que se explicaba no Entonces para Future selection Qué dice correlación En aquel momento me pareció
+13:59
+lógico hoy sé que es un error Eh Esto es el os estoy explicando lo que yo hice para robotrader y que de segundo
+14:06
+vale futro selection lo hacía con correlación es decir tú tienes un conjunto de variables entendía que las
+14:12
+mejores variables serán aquellas que tengan más correlación con el target Qué es el target pues aquello que quieres eh
+14:18
+que quieres predecir que puede ser por ejemplo el el retorno a un día a vista vale tú ves Pues todos los indicadores
+14:26
+que has calculado y tienes el target que son este d representa el target los retornos a un día vista pues aquellos
+14:32
+aquellas variables que tengan mayor correlación con el target Retorno a un día vista intuitivamente pensadas Serán
+14:39
+las que me serán más útiles para construir reglas como como digo es un error acto Seguido lo veremos Vale qué
+14:46
+rule extractor qué algoritmo de rule extraction utilicé riper porque era el más popular porque no conocía otro En
+14:52
+aquel momento y porque bueno encontré una aplicación que se llamaba hca eh con
+14:58
+el cual cu podía utilizar este algoritmo que se llamaba riper en En mi opinión y Pese a que es el
+15:04
+algoritmo de rule extraction más popular es un error utilizar riper luego
+15:09
+explicaremos por qué vale Y por último la validación Cómo la hacía pues una validación clásica de toda la vida yo
+15:16
+cogía mi histórico lo partía en datos de entrenamiento datos de Test sacaba mis
+15:21
+reglas con los datos de entrenamiento y luego las probaba en los datos de Test sacaba métricas De de esos datos de Test
+15:28
+Y entonces en en función de esas métricas En tes decidían qué eh reglas validaba y cuáles
+15:34
+no un error como explicaremos también luego entonces quedé segundo en robot
+15:41
+pero fijaros Qué triste fue mi participación la verdad no no vamos a engañar a nadie quedé segundo Por qué
+15:47
+Porque bueno en muchos de estos picos me hacían puntuar en las semanas las
+15:52
+primera semana segunda semana de hecho creo que gané la mitad de la semana no sé si sonan ocho o nueve semanas y yo
+15:57
+gané cuatro o sea gané quedé primero en cuatro o cinco de las semanas por ejemplo estas Aunque luego lo perdía
+16:03
+pues como yo puntua cuando me iba bien las semanas que me iba bien puntua mucho las semanas que me iba mal pues no restaba y así es como aquí también
+16:10
+Aunque estoy en dropdown eh conseguí puntuar aquí conseguí puntuar aquí y al final sumé puntos suficientes como para
+16:16
+quedar segundo mi mi mi participación no fue brillante pero debido al
+16:23
+planteamiento inicial que os he dicho lo de utilizar correlaciones lo de utilizar riper y eh lo de validar con métricas de
+16:30
+Test no es válido Simplemente no es válido Entonces vamos a explicar un poquito cómo lo hago actualmente vale
+16:36
+como porque desde entonces me quedé pensando de hecho recuerdo mi la entrega de premios que se supone que tú tienes
+16:42
+que estar contento y explicas un poco estaba contento pero explicas un poco lo que has hecho no cómo has conseguido
+16:48
+quedar segundo yo básicamente Me dediqué a listar todos los errores que había cometido y desde entonces pues que le
+16:54
+estoy dando la cabeza no pasado un año y pico es un tema que me apasiona entonces he podido he podido corregir algunas
+17:01
+cositas entonces empezamos por Future selection
+17:06
+como os decía en mi participación en robotrader utilizaba la correlación Cuál
+17:11
+es el error de esto es un error conceptual primero de todo la correlación presupone que existe una relación lineal entre las variables y el
+17:18
+target y no es cierto si fuera cierto con regresiones lineales tendríamos sistemas de trading
+17:25
+y no no es cierto suelen no existir relaciones líneales entre un Target entre una variable y un Target si
+17:32
+existiera una relación lineal observaríamos eh cosas como así en vez
+17:37
+de esta línea plana esta línea plana con este coeficiente de determinación nos indica que no existe ninguna relación
+17:43
+lineal entre el RS 14 por ejemplo y el target que en este caso sería el retorno a un día vista Simplemente no existe
+17:50
+relación lineal por tanto las correlaciones son un error metodológico un conceptual de base no podemos
+17:56
+utilizar correlaciones ni de spearman ni de pearson porque presuponen correlaciones lineales que a la práctica
+18:02
+no existen simplemente Entonces tienes que ir a buscar otras métricas eh que
+18:08
+midan la relación entre las variables y del Target para seleccionar aquellas que te van a interesar más pero no pueden
+18:14
+ser correlaciones tienen que ser otras métricas que midan relaciones no lineales tipo eh mutual information por
+18:20
+citar alguna de ellas vale mutual information últimamente se ha convertido como un como un estándar popular entre
+18:27
+mis colegas de r exaction pero yo tampoco lo utilizo actualmente tengo un algoritmo propio para
+18:34
+eh para buscar aquellas eh fotus que mejor me vayan vale hablaremos de ello más adelante
+18:41
+Entonces lo siguiente respecto a rule extractor utilizaba riper Cuáles son los
+18:46
+problemas de riper Bueno sobre optimiza como como un condenado riper es una máquina de sobre
+18:53
+optimizar en general como todos los algoritmos modelos de Machine learning Deep learning y reform learning les
+18:59
+tengo muy poca fe Aunque soy científico de datos por por formación y me encanta el tema del Machine learning le tengo
+19:06
+muy poca fe porque al final son máquinas de sobre optimizar eso no tiene ningún problema la sobre optimización no tiene
+19:12
+ningún problema cuando los datos son estáticos en ausencia de drift ya hablaremos luego de lo que es el drift
+19:17
+pero cuando los datos son cambiantes a lo largo del tiempo eh es nefasto entonces con riper en el mejor de los
+19:24
+casos eh la mitad de las reglas que Minas tien alguna posibilidad de
+19:29
+sobrevivir a futuro en el mejor de los casos esto por un lado es una máquina de
+19:34
+sobre optimizar por otro lado riper en realidad no es un algoritmo de minería de datos riper es un algoritmo de
+19:41
+Machine learning concretamente de un tipo de problema de Machine learning que se llama de clasificación porque riper
+19:47
+lo que hace es eh clasificar riper necesita un Target
+19:53
+binario O sea si por ejemplo me lo invento un Target binario si mañana sube la activo es la etiqueta es uno si baja
+20:01
+el activo la etiqueta es cero Vale entonces riper lo que hace es clasificar entre unos y ceros vale esto te sirve
+20:07
+para marcar la dirección si subes uno Si bajas cero pero el movimiento no es solo la dirección el movimiento es la
+20:14
+dirección y el tamaño de ese movimiento Side and size size que le dicen en
+20:21
+inglés no Entonces con riper te cargas la mitad de la información que es el tamaño de ese movimiento es decir con
+20:27
+riper como tienes que discretizar la variable convertirla en binario una tienes que discretizar el target y
+20:33
+convertirlo en binario en unos y ceros Pues tú le vas a llamar a uno por
+20:38
+ejemplo a un activo que un día sube un 5% eso es un uno ha subido etiqueta uno
+20:44
+un 5% otro día sube un 0,5 por también lo vas a llamar Uno Vale pierdes y es
+20:52
+absurdo para mí es absurdo teniendo la información de cuánto se mueve no no solo Hacia dónde sino también Cuánto se
+20:58
+mueve prescindir de esa información para mí me parece absurdo me parece eh un mal enfoque e teniendo la
+21:05
+información no solo de la dirección sino del la del del tamaño del movimiento
+21:11
+riper te prescinde de esa parte del tamaño del movimiento simplemente a todo lo que sube lo va a llamar uno
+21:16
+independientemente de si es mucho o poco y para mí esto no tiene ningún sentido o sea es es sí que tiene sentido lo que
+21:22
+pasa es que es una simplificación que no es necesaria vale Y aparte lo que os he dicho no es un no es un algoritmo de
+21:30
+minería es un algoritmo de Machine learning por tanto una máquina Nata de sobre optimizar vale esto respecto al al
+21:38
+rule extractor que yo utilicé respecto a la validación esto es la historia de todos los traders Eh Esto no son datos
+21:45
+reales esto es una representación de un hecho que todos los traders hemos experimentado en carne propia que es tú
+21:53
+eh desarrollas una estrategia y en el periodo de entrenamiento aquello es una maravilla Es un cohete que una línea
+21:58
+perfecta recta hacia arriba luego lo testas puede que más o menos funcione
+22:04
+pero ya no es tan maravilloso ya no es ese cohete que veías en los datos de entrenamiento y luego vas a real y ya no
+22:10
+hay ni rastro ya no hay ni rastro de aquello que hacía en el entrenamiento en real aún mucho peor no es como que entré
+22:17
+en el máximo rendimiento en tes un poquito menos y en real aún menos vale Y esto por qué pasa bueno Esto es
+22:25
+una cosa que me obsesionó durante mucho tiempo y que logré entender en el eh durante el máster de ciencia de datos
+22:32
+pasa porque tú en el train estás entrenando eh con unas características determinadas en el periodo de train el
+22:38
+activo tendrá una volatilidad un sesgo tendencial otra serie de características determinadas a medida que pasa el tiempo
+22:44
+y te alejas de aquel periodo esas características van a ir cambiando y al final tú tienes un modelo que entrenaste
+22:50
+para unas características y al final estás enfrentando a un contexto que es completamente diferente por poner un
+22:56
+ejemplo eh los vehículos autónomos imaginad que tenéis un vehículo autónomo que lo
+23:02
+ponéis para entrenar le ponéis a dar vueltas a un circuito un circuito al circuito de montmelo que es el circuito
+23:07
+aquí de Barcelona a dar o jarama en Madrid a dar vueltas al circuito Vale y lo hará perfecto eh cogerá las curvas
+23:14
+perfecto acelerará frenará cuando tenga que frenar perfecto ha entrenado en ese contexto ahí lo hace perfecto luego
+23:20
+coges ese ese vehículo autónomo lo pones en el centro de Madrid o en el centro de Barcelona y se va a encontrar con
+23:27
+peatones con coches en sentido contrario con rotondas con semáforos y estará perdido no sabrá qué hacer porque es un
+23:33
+contexto completamente diferente pues esto es un poquito lo que nos pasa también con los con los sistemas de
+23:38
+trading los entrenamos en un contexto pero como ese contexto es cambiante luego se encuentran con un contexto
+23:44
+diferente y por eso el rendimiento no es el mismo vale esto lo entendí en el máster eh Porque es un es un fenómeno
+23:52
+bien estudiado en en en el ámbito de ciencia de datos en Machine learning allí le llaman en Machine learning le
+23:58
+llaman model decai pero es análogo al fenómeno del que hablan algunos autores en trading como Ernest Chan que le
+24:04
+llaman Alpha decai es exactamente lo mismo fijaros en pantalla tenemos el
+24:09
+2017 2018 del eurod dólar 2017 como observáis la parte que está en verde un
+24:17
+Bueno un periodo alcista y el 2018 la parte que está en Rosa o este rojo raro eh un periodo bajista Pues si Obviamente
+24:26
+si tú tienes un un algoritmo un sistema que entrenas en este periodo con este sesg alcista cuando se encuentra este
+24:33
+contexto que es completamente diferente no puedes esperar que haga los mismos resultados que hacía aquí por qué Porque
+24:39
+es completamente diferente es otro contexto vale esto se llama drift este
+24:44
+cambio Este cambio en en en en el contexto en el que se mueven nuestros sistemas de training se llama drift o en
+24:51
+Machine learning o en el ámbito de ciencia de datos lo llaman drift aquí estamos haciendo referencia al drift o
+24:57
+al cambio de Los retornos vemos en la parte verde que los retornos de este activo tendrán una distribución eh con
+25:04
+una media positiva mientras que los retornos en esta parte del histórico tendrán una distribución con media
+25:10
+negativa Más allá de volatilidad y todo esto pero esto hace referencia solo al
+25:16
+target cuando hablamos de cambios en el target nos referimos a concept drift pero no es el único drift que existe
+25:23
+porque cada una de las variables que nosotros vamos a utilizar para para para montarnos nuestras reglas
+25:29
+para bueno Los indicadores técnicos que vamos a utilizar no solo los retornos del activo también los indicadores
+25:35
+técnicos que utilizamos cada uno de ellos también sufe drift eh funcionaron
+25:40
+en una en una parte del histórico con unas condiciones determinadas cuando esas condiciones cambian se desajustan
+25:47
+Por así decirlo no entonces esa suma del concept drift del target más esa suma de
+25:53
+más los cambios en en las variables que se llama dat drift genera lo que se llama model decai en ciencia de datos
+26:00
+Alfa decai lo que decía Ernest Chan en trading que al final es ese fenómeno de
+26:05
+que nuestros sistemas pierden pierden rendimiento con el tiempo fácil de entender porque con cualquier máquina un
+26:12
+coche un ordenador un portátil lo que sea Cuándo es el mejor momento de el
+26:18
+momento de mayor rendimiento de una máquina Cuándo eses es cuando sale de fábrica verdad Y
+26:25
+luego con el tiempo las piezas se van desgastando las piezas se van estropeando y llega un momento que esas
+26:30
+máquinas ya no funcionan Pues con nuestros sistemas de trading un poquito lo mismo eh cuando salen del periodo de
+26:36
+entrenamiento Ese es el momento de mayor rendimiento de nuestra estrategia y luego con el tiempo ese rendimiento va
+26:43
+sufriendo Alfa decí todo esto que os explicaba ahora no Entonces si se entiende esto lo primero que hice fue la
+26:51
+partición invertida que es algo de lo que ya he escrito he hablado en en medios como x Trader en en traders
+26:58
+magazine y enp trading creo que también ya lo expliqué es decir si
+27:04
+Nosotros sabemos entrenamos aquí en el train vale Y tenemos un rendimiento
+27:09
+nuestro rendimiento máximo Cuando llegamos al test nuestro rendimiento ya deca un poquito y cuando llegamos a re a real ha decaído más qué está sucediendo
+27:17
+aquí lo que acabo de explicar no cuando sales del tren es el momento de Máximo rendimiento justo aquí pero luego antes
+27:24
+de ir a real le metemos un periodo de Test que en realidad lo que estamos haciendo es noos el periodo de mayor rendimiento de
+27:31
+nuestra estrategia no sé si se me sigue si se me entiende En definitiva lo que
+27:36
+hice lo primero que hice probar es darle la vuelta es decir normalmente nos dicen que periodo de train luego un periodo de
+27:43
+Test y luego ya a real no dice y Qué pasa si le damos la vuelta y es lo que
+27:50
+es lo que hice es lo que llamo partición invertida lo que dice es Vale pues que el periodo de train sea el periodo más
+27:56
+cercano al real Vale entonces cuando sale mi estrategia de aquí pues estará
+28:01
+en su momento de mayor rendimiento que es lo que me interesa a mí ponerlo en real en el momento de mayor rendimiento No intuitivamente a mí me cuadraba tenía
+28:08
+toda esta explicación del drift queos ha desarrollado detrás eh pero la verdad es que no lo había visto hacer nunca a
+28:14
+nadie esto Supongo que ya habrá algún autor que hab habrá hablado de esto pero nunca yo nunca lo había visto vale hice
+28:21
+pruebas como os dicho ru es eficiente generas 10.000 reglas de trading con un montón de pares de forex diferentes por
+28:28
+ejemplo a la alta y a la baja y lo pruebas si o tienes mejores resultados y efectivamente con partición invertida eh
+28:35
+O tengo mejores resultados y Estas son las razones o sea yo lo lo puede comprobar
+28:40
+empíricamente Pero había estas razones es a causa del drift o sea como Bueno ya lo he explicado no voy a darle más
+28:46
+vueltas pero lo probé empíricamente y efectivamente así lograba mejores resultados luego en forw vale Yo esto lo
+28:53
+hice con forex con pares de forex eh luego otros compañeros como Miguel Jiménez de estrategia del canal de
+28:59
+YouTube estrategias ganadoras de trading él lo probó con el oro llegó a las mismas conclusiones y en alguna vez un I
+29:07
+caro por ejemplo me ha comentado que incluso en renta variable ha encontrado esto que invirtiendo la partición O sea
+29:13
+haciendo que el train sean los datos más cercano solo con eso mejoramos los resultados en real pero no me quedé
+29:21
+ahí no fue lo único que invertí os decía hace un momento que en Machine learning
+29:26
+la sobre optimización es un problema eh Por eso le tengo poca fe a la aplicación de Machine learning de learning re
+29:31
+learning al trading porque tienden a sobre optimizar demasiado pero no es no es un problema de que estén exentos el
+29:38
+resto de enfoques de de el resto de enfoques de de traders eh las optimización es bastante común sea cual
+29:46
+sea el enfoque entonces pensen en lo siguiente Por qué el train tiene que ser
+29:52
+más grande que el test por qué tiene que ser un periodo más largo que el test y Qué pasa si hago que el test sea
+30:00
+más largo que el train se entiende la idea es decir si tú tienes un train normalmente hacemos una
+30:06
+partición 70 a 30 un 30% de Test es decir tú haces una
+30:13
+estrategia y la teste en un 30% del histórico tienes más riesgo de sobre optimización que si la teste en el 70
+30:20
+por del histórico dicho de otra manera cuando mayor sea el test en
+30:27
+relación al train O sea la relación entre el test y el train es invers es inversamente proporcional al riesgo de
+30:33
+sobre optimización es decir si tú tienes un 30% de train por ejemplo y luego te
+30:39
+pasa un test que es el 7% del del histórico ha reducido mucho
+30:46
+el riesgo de sobre optimización si fuera el in revés si fuera el train que es lo normal en un periodo más largo y el test
+30:52
+más pequeñito es más fácil que algo sobre optimizado Te te te sobrevive a un test pequeño cuando más grande sea el
+30:58
+test más difícil es que algo sobre optimizado sobreviva por tanto no solo invertir el orden del tren y el test
+31:04
+sino que invertir la proporción entre test y train que el test sea más grande que el train es difícil encontrar reglas
+31:12
+en estas condiciones pero reduces la sobre optimización de esta manera pero tenemos un problema dejarme
+31:19
+ir para atrás dejarme ir para atrás tenemos un problema Yo he dicho que las métricas en test no me
+31:25
+servían Por qué Porque sa acaba un montón de un montón de de reglas de de trading con minería luego sacaba 1
+31:32
+métricas en en los periodos de Test y luego veía que no existía la más mínima correlación con lo que con lo que sucedía en forw con el rendimiento luego
+31:39
+a futuro además aquí al invertir la partición hemos hecho que el test Aún se parezca menos al real está más lejos va
+31:47
+a haber más drift entre más drift acumulado entre medio Entonces cómo cómo hacemos para testear tenemos además
+31:53
+hemos reducido el periodo de tren entrenamos aquí en en un periodo muy pequeñito cómo hacemos para testear aquí en un
+31:59
+entorno que va a ser diferente al tren por naturaleza Pero además aún más diferente al
+32:05
+Real cómo lo hacemos entonces dándole vueltas a este problema eh la idea fue de mi colega al an
+32:13
+tomillero Pero bueno es el monkey test luego hablaremos de Alan esto es el monkey
+32:19
+test muchos ya me habéis bueno algunos Ya me han escuchado hablar del monkey test básicamente es comparar tu
+32:26
+estrategia con lo que Hubieran hecho estrategias aleatorias en el mismo periodo es
+32:33
+decir Mejor una imagen que 1 palabras tenemos en pantalla El ejemplo de la estrategia de las Tortugas la mítica
+32:39
+estrategia de las tortugas en los últimos 10 años vale comparamos contra el SP 500
+32:45
+generamos estrategias análogas a la estrategia de la tortuga ahora no vienen
+32:50
+al caso las reglas pero la estrategia de la tortuga pues no está al 100% del tiempo en mercado imaginamos que de cada
+32:55
+100 días está 60 días en mercado pues entonces tenemos que tenemos que generar
+33:00
+estrategias aleatorias que estén el mismo el mismo tiempo el mismo porcentaje de tiempo en mercado eso es
+33:06
+lo que llamo monos estrategias eh aleatorias pero análogas a la nuestra estrategia es decir no tiene sentido
+33:14
+comparar nuestra estrategia si está en mercado el 30% del tiempo con otra que está el 80% del tiempo en mercado tengo
+33:20
+que comparar estrategias con la misma cadencia operativa Por así decirlo no es la única restricción entonces generas
+33:26
+miles de monos miles de estrategias aleatorias Y ves en ese periodo de tiempo que tendrá un sesgo determinado
+33:32
+en cuanto a volatilidad en cuanto a tendencia ves qué distribución de rendimiento puedes esperar de la
+33:38
+aleatoriedad de esos monos que representan la aleatoriedad ves aquí en en aquí eh cada una de estas líneas de
+33:45
+colorines representa el camino de uno de esos monos durante esos 10 años y aquí en en este gráfico a la derecha lo que
+33:52
+tengo es la distribución el histograma de distribuciones de los rendimientos Vale entonces se ve que que los monos en
+33:59
+promedio ganan ganan dinero cómo puede ser que una estrategia aleatoria en promedio esas miles de estrategias en
+34:06
+promedio ganen dinero cómo puede ser bueno por las características del subyacente en este caso en este periodo
+34:12
+el sp500 que es donde se aplicaba esto el sp500 ha sido altista literalmente
+34:18
+durante ese periodo un mono tirando ardo Salazar hubiera ganado dinero Por qué Porque ha sido alcista y de hecho aquí
+34:23
+lo vemos miles de monos no sé cuos no sé cuántos no recuerdo aquí si son 1000 o 10,000 miles de monos incluso El peor de
+34:30
+ellos gana dinero vale Por qué por el sesgo del por el sesgo del activo
+34:35
+subyacente Entonces es una manera de comparar contra el azar Pero dentro del mismo periodo un periodo
+34:42
+con las mismas características características es decir normalmente hacemos qué hacemos Eh
+34:49
+hacemos para validar una estrategia utilizamos reglas heurísticas del tipo si mi estrategia ent supera un profit
+34:55
+factor del dos me lo invento entonces eh la doy por buena Pero por qué dos A lo
+35:01
+mejor en ese periodo de Test las características de ese periodo de Test Son son las características de ese
+35:07
+periodo de Test quizás son tremendamente adversas para tu estrategia A lo mejor que haga un 1 y medio un 1,5 ahí es
+35:14
+magnífico quiere decir que ha sobrevivido bien a un periodo francamente adverso para la estrategia Entonces cómo en vez de hacer una regla
+35:21
+heurística que ponga un un umbral pues profit factor mayor que dos ese umbral va a depender del subyacente de De qué
+35:27
+manera va a depender Pues con los monos tú generas eh tú generas un montón de monos en ese subyacente y esta
+35:34
+distribución de resultados que obtienen los monos por azar se va a ajustar a las características del subyacente entonces
+35:41
+puedes poner un umbral normalizado Qué quiere decir al final es un test
+35:46
+estadístico como ahora veremos e tú puedes decir que si tu estrategia supera el 99% de los monos Pues de una manera
+35:53
+con un intervalo de confianza que se diríamos En estadística bastante amplio puedes afirmar que tu estrategia no se
+35:59
+debe al azar vale eh Como ya he hablado en otras ocasiones del monkey test y tal
+36:05
+No no me voy a extender más solo pues esto todos los créditos a quien se los merece que es sal an tomillero que es el
+36:11
+último ganador de de robotrader de él fue la idea y a su vez Alan que es un
+36:16
+crack sacó la idea de este señor de Ronald Fisher de una divertida anécdota que se
+36:22
+llama The lady tasting tea no sé cómo vamos de tiempo o si la conocéis pero es una es una anécdota que que Quiz quizás
+36:29
+ayuda a entender la base del monkey test de hecho esta anécdota de Lady tasting te es la base de esta obra de Ronald
+36:37
+fiser que es la base de la de la estadística moderna no sé si está Alberto Muñoz por ahí pero si está que
+36:42
+me corrija es es en lo que se basa La estadística moderna vale del ID testing
+36:48
+cuenta la historia que estaba este señor Ronald fiser es un matemático bebiendo té con una colega suya que era bióloga
+36:54
+Muriel Bristol concretamente se llamaba y ofreció el té Muriel lo probó y lo
+36:59
+rechazó dice no me lo voy a beber y Ronald fis dice que le pasa al té que qué problema tiene dice es que has puesto la leche después que el té y
+37:07
+Ronald fis se pensaba que era una broma dice cómo vas a poder detectar si has puesto la leche antes o después y Muriel
+37:12
+Muriel Bristol afirmaba que sí que era capaz de detectar por el sabor si había puesto antes el té o la leche entonces
+37:18
+Ronald fis se quedó pensando dice Cómo puedo demostrar que está que está mintiendo que eso no puede ser que tenga el el que tenga el el gusto tan fino
+37:26
+entonces preparó un experimento dice voy a prepararle 10 tazas 10 tazas de té
+37:32
+cinco de ellas echaré la leche primero y las otras cinco echaré la eh el té primero vale las desordenaré las
+37:39
+desordenaré y haré que las pruebe dice como tengo como tiene 50% de
+37:45
+posibilidades de acertar en cada una de las tazas lo normal es que acierten cuatro cinco o seis vale Obviamente si
+37:52
+acerta las 10 tazas quiere decir que efectivamente Muriel Bristol puede detectar por el sabor si he echado el té
+37:58
+o la leche antes lo cual es bastante bastante peculiar y resultó que Muriel
+38:04
+Bristol acertó ocho de las 10 tazas y Ronald fiser se quedó pensando dice ocho
+38:10
+de las 10 puedo descartar que sea puro azar si acerta ocho de las 10 bueno y
+38:15
+ahí con esta historia con esta anécdota es como nacieron los test estadísticos como los conocemos hoy en día Y esta es
+38:21
+la idea si yo tengo una estrategia que supera al 99% de los monos
+38:28
+puedo descartar que se deban sus resultados al azar pues al final es un test estadístico es como el valor p todo
+38:34
+esto no yo así lo veo es fue idea original de de Alan tomillo de adaptar
+38:40
+esto pero la idea original digamos que inspiró a Alan viene de aquí que además es la base de la estadística moderna
+38:47
+e entonces aquí tenemos el cuadro entero de cómo valido yo ahora las estrategias
+38:52
+de trading Esto me he enrollado más en este tema de de la validación de las estrategias de trading con lo de la
+38:58
+partición invertida la proporción invertida y en lo del monkey test Por qué Porque son metodología o son ideas
+39:04
+son conceptos que se pueden aplicar a cualquier enfoque de trading a cualquiera vale Más allá de rule extraction Pero al final en rule
+39:11
+extraction es especialmente importante porque te juntas con un volumen de reglas bastante considerable y tienes
+39:17
+que discriminar de una manera bastante eficiente Vale entonces cómo lo hago ahora pues fijaros las tres cositas que
+39:23
+hemos comentado primero que los datos de train los datos de entrenamiento sean los más cercanos al futuro sean lo más
+39:30
+parecidos posible al contexto que se va a encontrar la estrategia en real Vale entonces invertimos primero los datos
+39:37
+más lejanos el test y los datos más cercanos el train segundo
+39:42
+eh para evitar la sobre optimización hacemos que el test sea en proporción mayor que el train lo cual es muy poco
+39:48
+habitual no suele hacerlo la gente porque es bastante exigente Y por último Cómo valido cuando ya he hecho esta
+39:54
+partición inversa la proporción inversa entre test y train Cómo valido las reglas pues particularmente exijo que el
+40:01
+rendimiento de las reglas en el tren supa al 99% de los monos vale Y que ent supere al menos al
+40:08
+90 por de los monos si yo tengo una una estrategia que ha sido desarrollada con
+40:14
+con estos poquitos datos de entrenamiento que aquí supera el 99% de los monos es relativamente factible son
+40:21
+datos de entrenamiento se va a ajustar ahí muy bien pero si luego esa misma regla luego en los datos de Test supera
+40:26
+el 90 de los monos Casi casi que a muerte con esa regla es una regla que
+40:31
+tiene muy pocas probabilidades de haber sido sobre optimizada y además es muy poco probable que se deba al azar es una
+40:38
+regla que ya susceptible de ser desarrollada para montar una estrategia de trading en torno a ella vale Y esto
+40:45
+es como lo hago actualmente eh Por último estos robot Trader habrá
+40:52
+muchos estudiantes o muchos que se están iniciando como yo en su momento en el tema del trading algorítmico entonces un
+40:58
+dato un dato no una idea que yo quería o un un apunte un consejo que yo quería dar es que en Machine learning decimos
+41:05
+que garb In garbage Out es decir si tú a tus sistemas a tus modelos les metes
+41:10
+basura el output de tus modelos sistemas va a ser basura se refiere a los datos
+41:15
+entonces ojo cuando queráis hacer trading con forex en cfds ojo porque al
+41:23
+ser no al no ser un mercado centralizado los datos dependen de varían de proveedor en proveedor y además hay
+41:30
+muchos errores por comentar algunos en Yahoo finance que es un proveedor de datos fácil de utilizar con python en
+41:36
+forex concretamente te encuentras que muchos días Eh la barra el open el High el low y el
+41:43
+close tienen el mismo valor como si en todo un día el El par no se hubiera movido lo cual es absurdo luego en otros
+41:50
+proveedores he encontrado missings he encontrado periodos enteros sin datos a lo mejor falta una semana o días sueltos
+41:57
+eh lo cual es un problema también y luego eh valores aberrantes a veces por
+42:02
+temas de puntuación un punto que se pierde lo que tenía que ser 1,0 no sé qué se convierte en 1000 y pico es un
+42:08
+valor aberrante entonces encuentras de todo y para ejemplificar esto Esto es un caso real no mío de un colega pero eh se
+42:16
+ve es la misma estrategia con los datos de un proveedor a la izquierda y con datos curados a la derecha cambia
+42:22
+radicalmente Porque si tú estás utilizando eh indicadores técnicos
+42:27
+necesitan del Open el High el close etcétera y utilizas datos de Yahoo finance que muchas veces lo que hace es
+42:33
+chafa hace que el open High low Close sean iguales te va a modificar mucho el
+42:38
+valor de los indicadores Y eso puede tener un impacto significativo luego en la estrategia vale aquí se ve claramente
+42:45
+se puede apreciar que que que es el mismo el mismo el mismo sistema el mismo
+42:50
+activo curado con datos no curados del proveedor que no sabes de dónde vienen tampoco Y curados en este caso con
+42:57
+quandel e Por qué os comento esto porque para para lo que os voy a mostrar a
+43:03
+continuación he hecho servir datos de quandel que son datos curados Vale Nos aseguramos de que esos datos no hay esos
+43:08
+missings no hay esos valores aberrantes no hay esos esos errores que he encontrado en otros proveedores Vale
+43:15
+entonces eh Ya que venía aquí a robotrader y ya que he pegado una chapa importante
+43:21
+respecto a rule extraction y teorí Monkey test y todo esto quería hacer que la última parte de la charla fuera
+43:27
+práctica vamos a desarrollar en directo con la metodología que si si no falla la técnica esto son cosas del directo ya
+43:34
+veremos si no falla eh voy a desarrollar en directo una regla de de ru extraction
+43:40
+aplicando todo lo que he explicado aquí eh en base a una aplicación que he hecho esta aplicación estará disponible para
+43:46
+toda la comunidad de robotrader El que quiera acceder Bueno solo tiene que acceder eh Hay un canal de discord en el
+43:52
+cual ahí está la contraseña disponible y nada Vamos allá
+43:58
+podemos sacar cositas como estas esto es un ejemplo que podremos sacar hoy con con ahora en directo si todo va bien
+44:03
+Vamos a probar de acuerdo lo primero que hago yo voy al
+44:09
+al a mi terminal de Met tader en este caso para tener los datos de calidad
+44:15
+abro cualquier gráfico de forex cualquiera eh es igual y en la
+44:20
+temporalidad que sea le meto el el Ela de quandel que esto es un producto que
+44:26
+me lo han dejado en versión Beta me lo han dejado para que yo pruebe pero que me parece una maravilla porque veréis
+44:32
+que fácil es de utilizar necesito Eso sí necesito mis mis contraseñas para
+44:39
+acceder copy text Aquí lo tengo veréis qué
+44:49
+maravilla Y ahora un segundito
+44:58
+y aceptamos vale esto se lea de quandel o sea es decir No tienes que andar
+45:03
+trasteando con archivos para arriba para abajo meterlos en metat simplemente ar restras Ela aquí a un gráfico de forex
+45:09
+al que tú quieras a cualquier gráfico en este caso vamos a actualizar los measures le das a Download y lo que hace
+45:15
+es te actualiza los históricos e de los measures en este caso al
+45:21
+momento ya veis que no tarda nada va superrápido el dólar contra el yen el dólar contra el australiano
+45:27
+y así y en un momento ya los tendremos y así ya tengo los datos eh curados para no tener esos problemitas con los datos
+45:33
+que os he mostrado vale lo siguiente que yo haría una vez ya he bajado los datos ya podríamos cerrar el ea en este caso
+45:41
+es en diario lo yo utilizo un un ea que he creado yo para Descargarme todos
+45:47
+estos indicadores que vemos aquí que son indicadores estándar de de metatrader
+45:53
+Pues el B Power el Bull Power el cci de marker Force index son indicadores que están disponibles en las plataformas de
+45:59
+metat 5 Vale y los descargo todos ellos entre las fechas que yo le diga en el
+46:05
+Time frame que tenga que tenga actualmente en este caso es diario y eh para un Rango de parámetros Qué quiere
+46:11
+decir esto Pues que el rsi o cualquiera de estos indicadores lo va a calcular entre rcii de dos periodos hasta rci de
+46:17
+100 periodos tres periodos cuatro ta ta como comprenderéis se juntan un montón
+46:22
+de variables pues 1 2 3 4 5 6 7 8 och al final eran 800 y pico 800 y pico
+46:30
+variables que se juntan de acuerdo solo con darle a aceptar me lo guarda en un archivo y eso es lo que vamos a utilizar
+46:35
+en la aplicación la aplicación la tengo por aquí esta sería la aplicación vale la
+46:41
+voy a a correr en en local porque va un poco más rápido eh pero es una aplicación que tengo desplegada con
+46:47
+streamlit en la nube con lo cual la puede utilizar cualquiera como os decía para acceder a la aplicación Esto está
+46:53
+abierto para toda la comunidad de robot Trader la comunidad de y la comunidad de qualify models de acuerdo cualquiera que
+47:00
+quiera utilizarla solo tiene que entrar aquí y ahí yo le daré acceso Vale
+47:05
+entonces cómo funciona
+47:11
+esto
+47:18
+segundo vale ya hemos accedido entonces aquí podemos hacer esto más grande más
+47:24
+chiquitito cambiar los colores como queráis vale primero que hacemos Bueno aquí os dejo el enlace de quandel por si os interesa lo de los datos que por el
+47:31
+precio que lo hacen y y el impacto que tiene yo lo para mí es un fundamental es
+47:36
+un básico ahora mismo eh Por eso lo destaco y aquí tenemos los activos que
+47:42
+podemos escoger para esta versión demo que he hecho de la aplicación vale por ejemplo el euro dólar por hacer un el más popular de todos cargar datos
+47:49
+running se lo está pensando
+47:58
+vale Ya lo tenemos cargado Aquí vemos la evolución del euro dólar en diario durante 11 años vale vemos que tiene un
+48:04
+sesgo bajista etcétera etcétera vista previa de los datos aquí tenemos el dataset que le hemos cargado como os
+48:10
+decía un montón de todos esos indicadores y el target el target en este caso va a ser el retorno a un día
+48:17
+vista fijaros el target es una variable continuo no son unos y ceros como es lo
+48:23
+que utiliza riper por qué porque yo tengo un algoritmo propio de r extraction que no solo considera la
+48:28
+dirección sino también el tamaño del movimiento vale Si no aquí tendríamos unos I ceros para poder utilizar con
+48:34
+riper vale ya tenemos cargados los datos lo siguiente que hace análisis fijaros lo que os he contado partición inversa
+48:41
+todo esto es test un poquito de entrenamiento concretamente creo que son TR años de
+48:47
+entrenamiento y aquí dejo dos años de Forward vale Porque la idea es
+48:53
+desarrollas aquí primero aquí luego teste aquí y si
+49:00
+aquí si lo desarrollado aquí te ha validado aquí con el monkey test entonces ves lo que ha hecho aquí si
+49:05
+aquí te sigue Sobreviviendo pues entonces adelante vale Esta es la idea pero aquí ya se aplica la partición
+49:13
+inversa y la proporción inversa lo que os decía del tren y el test de acuerdo Entonces estadísticas de los retornos
+49:20
+Bueno una cosa que nos interesa a la hora de no todos los activos no lo he comentado antes y es interesante no
+49:26
+todos los activos son igual de minables Por así decirlo nos interesan activos que sean lo más estables posibles a lo
+49:31
+largo del tiempo que sufran el mínimo drift Cómo podemos medir esto Pues si tú
+49:36
+tienes un periodo como este test y este train los puedes comparar con un test estadístico llamado col mogor smirnov
+49:43
+muy fan de col mogor es señor es super interesante Entonces los puedes comparar
+49:48
+básicamente esto es una representación del test de colog smirnov los puedes comparar y tal entonces lo que hago yo
+49:55
+es una vez cargado el cargado el dato cargado los datos del activo en cuestión veo si es minable o
+50:02
+no con el test de colog of smirnov y luego veo si tiene algún sesgo Por qué Porque este activo lo vemos a lo largo
+50:08
+de es el eurod dólar lo vemos a lo largo de los últimos 11 años tiene un sesgo claramente bajista Pues yo aquí no me
+50:14
+voy a poner a Minas reglas al alza voy me voy a poner a Minas reglas que operen short de acuerdo tiene un sesgo tiene un
+50:21
+sgo tendencial Entonces sería absurdo por mi parte no utilizarlo Entonces voy a la sección Future selection acabo de
+50:28
+decir que este activo el eurod dólar tiene un sesgo bajista short o lo selecciono aquí umbral de correlación
+50:35
+bueno Esto es porque si tú eh utilizas eh tantas variables como las que como
+50:41
+las que vamos a utilizar hay redundancia Qué quiere decir pues que el rsi de 50
+50:47
+periodos Será muy parecido al de 51 y al de 49 y al de 52 entonces a lo mejor no
+50:52
+hace falta utilizarlos todos es redundante cuando más variables trabajas con cuantas más variables necesitas
+50:59
+procesar más lento va a ir todo entonces de alguna manera tienes que seleccionar eliminar la redundancia o en ciencia de
+51:06
+dat en ciencia de datos lo llamamos eliminar o reducir multicolinealidad es decir variables que sean muy similares
+51:12
+pues no me interesa elimino una de las dos si son muy parecidas En definitiva
+51:17
+lo que hago es eliminar aquellas variables que son muy parecidas reduzco
+51:23
+la multicolinealidad Vale entonces de las 800 y pico var al final se queda con
+51:28
+130 solo vale creo que son todas estas vale se queda con 130 exactamente
+51:34
+entonces o 131 Esto del score es una puntuación que yo le asigno con un
+51:40
+algoritmo propio a cada una de las variables en función de lo útil que me van a ser para generar reglas de trading
+51:45
+vale habían 800 y pico y al final solo quedan 130 ya hemos hecho Future
+51:51
+selection no tiene nada que ver con correlación ni siquiera tiene nada que ver con mutual information al final encontr una manera mejor de hacerlo pero
+51:58
+eh eso eh daría para otra charla quizá entonces una vez nosotros ya tenemos las
+52:05
+features seleccionadas el site decidido ya podemos ir a extraer reglas fijaros
+52:10
+esto es una representación del monkey Test en el periodo de train de las reglas que yo genere con esas futures
+52:16
+con esas variables que yo he seleccionado me voy a quedar solo con aquellas que superen este umbral que
+52:21
+implica que superan en esta métrica también una métrica propietaria que tampoco es el caso ahora de de desarrollarla
+52:27
+e los monos que superen a esta métrica hay las monos las estrategias las reglas
+52:33
+minadas que superen a esta métrica implica que han superado el 99% de los monos con lo cual es bastante complicado
+52:41
+que sean estrategias que llevan su rendimiento al azar vale se entiende Estos son lo que obtendrían en este
+52:46
+periodo operando short eh creo que son 10,000 monos O 1000 monos no me acuerdo
+52:52
+ahora 1000 o 10,000 es igual el orden de magnitud ahora vale me voy a voy a vamos vamos a seleccionar solo las reglas que
+52:58
+superan este umbral las que están aquí las que lo hacen También como los monos más suertudos vale Estos son todos los
+53:04
+ingredientes que hemos seleccionado vale las 130 variables que hemos seleccionado previamente vamos a escoger pues la que
+53:10
+nos ha salido que es la mejor de todas le damos a buscar reglas y lo que va a hacer es es eh va a buscarnos reglas que
+53:17
+utilicen dos ingredientes siendo uno de ellos este que hemos seleccionado aquí ya tenemos aquí todas estas
+53:24
+reglas en este caso son son reglas utilizando siempre cci 3 y
+53:31
+otro otro indicador son reglas que han superado el monkey Test en train vale son reglas que están aquí a la derecha
+53:37
+de umbra lo han hecho mejor que el azar vale en train ahí es fácil hacerlo en train porque son datos que conocen vale
+53:43
+podemos ver el aspecto de algunas de estas reglas clico aquí Mirad qué maravilla en train lo que decíamos antes
+53:50
+no el Trader siempre saca rectas preciosas en train luego en test ya no son tan bonitas y en Forward aún peor no
+53:57
+es lo que lo que comentaba antes no O sea aquí puedes ir cambiando la regla y vas viendo cómo lo hace entre fijaos
+54:03
+esto es una línea recta maravilloso entonces de lo que se trata es de validar Tenemos aquí 20 qué 27
+54:10
+candidatos empieza por c 28 candidatos se trata eh de seleccionar aquellas que no lo
+54:17
+hacen solo bien en train también nos interesa que lo hagan bien en test vale
+54:22
+Y aquí tenemos
+54:30
+vale3 aquí tenemos como lo han hecho en test dejarme ver Future selection
+54:37
+futures extraction bus
+54:46
+reglas vale Y esto es como lo han hecho en el
+54:53
+test vemos que ninguna de ellas supera el criterio que nos hemos marcado inicialmente podemos comprobar alguna de
+54:59
+ellas eh A ver cómo lo Hubieran hecho en test fijaros aquí tenemos el tren que
+55:06
+eran las rectas maravillosas de antes Y cómo han hecho Esas reglas en el en el test vemos que no lo hacen También era
+55:13
+algo de esperar s y en este caso ninguna nos ha
+55:19
+validado vale ninguna nos ha valiado quiere decir que en forw ninguna de ellas O sea ninguna de ellas ha superado
+55:25
+el umbral de validación del 9% en test vamos a probar con otra con otra con
+55:30
+otro ingrediente yo que sé este por ejemplo a ver le damos y así Hay un montón para
+55:36
+probar y te puedes estar un ratito no lo he automatizado aquí para esta para esta demostración porque tú puedes puedes
+55:42
+automatizarlo y entonces esto que estoy haciendo manualmente te lo hace ya directamente pero era para poder
+55:47
+explicar el proceso paso a paso fijaros aquí ya hay un par de reglas que lo hacen mejor
+55:53
+que el 90 por en test vale vamos a ver cómo lo huan hecho en forw fijaros la primera esto es el forw
+56:00
+dos años de forw datos nuevos fuera de muestra esta primera regla que efectivamente lo hacen mejor que el 99%
+56:06
+de los monos en train y mejor que el 90 de los monos en test luego en forw
+56:11
+hubiera obtenido beneficio y esta otra la podemos probar esta otra es más fea Bueno no
+56:18
+importa Back test ahí lo tenemos ahí vemos la foto completa fijaros Esta es
+56:24
+la idea primero miramos las reglas en el periodo de
+56:29
+train normal que aquí lo haga fantásticamente bien aunque depende mucho de este tirón Luego si ha superado
+56:36
+el 99% de los monos aquí esto pretendía ser un nueve de verdad madre mía no sé
+56:42
+escribir con esto yo bueno si esto supera al 99% de los monos aquí luego
+56:49
+vamos vamos al al test si supera el 90 de los monos aquí entonces miramos que
+56:56
+que en el forw sobreviva Y si en el forw sobreviva que 2s años me he pasado con un año estaría Guay Pues esta regla pues
+57:03
+me gusta vale Y es un ejemplo de cómo hubiéramos encontrado una regla es una regla en bruto porque es que al final no
+57:09
+tiene filtros no no tiene filtros no tiene No tiene stop l no tiene target profit pero es una manera eficiente de
+57:15
+encontrar reglas en bruto reglas que Eh Al ojo humano a mí me hubiera tardado Pues un montón de observación gráficos
+57:21
+de tal no hemos visto casi ningún gráfico eh Y hemos obtenido pues una regla dices vale yauma Pero esto luego
+57:29
+qué hago con esto pues Mirad espera hao rato esto fijaros que
+57:35
+es una regla muy fácil yo cojo Esto se lo paso a hgpt Vale y digo Oye hgpt hazme el código de esta regla que sea
+57:43
+cuando se cumplan estas condiciones abre un Abre cortos y cuando dejen de cumplirse estas condiciones cierra
+57:49
+cortos tal cual como os decía una arreglo en bruto sin filtros eh sin
+57:54
+Target profit sin Stop loss sin gestión monetaria sin nada de esto Vale pues vamos a ver qué tal lo hace esta
+58:00
+regla Cancelar vamos a ver eh A ver probador
+58:07
+de estrategias tengo ya algunos ejemplos tengo algunos ejemplos por ahí a ver ver eh probador de estrategias
+58:14
+Dónde está aquí esto Ah vale vale probador estrategias
+58:23
+esa en concreto es esta pues le he pedido el código a hgpt
+58:30
+me lo ha hecho perfecto además es super Pulido aquí lo podemos ver os lo enseño por pantalla me hace me lo hace muy
+58:37
+bonito todo muy muy bien codificado tampoco es como es una regla No no es mucho código es muy simple y le doy a
+58:48
+empezar y ya tenemos el gráfico tal de la regla tal no es exactamente cargado
+58:54
+lo que hacemos con python pero podéis observar que es muy similar Y tenemos los datos de btest
+59:02
+Vale Nos podemos entretener con lo que queramos aquí vale pero es solo una regla fijaros
+59:09
+que hace muy poquito drawdown vale dado el también dado el lotaje que que le he
+59:14
+puesto no pero tú podrías ir e ir buscando reglas y las puedes ir acumulando fijaros aquí hecho un
+59:20
+ensamblado un ensamblado que son en total si no me equivoco Aquí he metido siete reglas diferentes vale también me
+59:26
+lo hace ch gpt superb bueno en mi caso no es ch gpt es otra ía eh Funciona muy bien entonces a medida que tú le vas
+59:33
+metiendo que le vas metiendo reglas Pues tienes mayor beneficio es decir a medida
+59:40
+que tú le vas metiendo reglas a mínimo que estén desc correlacionadas entre sí y lo deberían estar porque utilizan
+59:45
+ingredientes diferentes Eh Pues aquí el drw down o la máxima pérdida se mantienen 2000 Sobre un 20%
+59:51
+sobre una cuenta de 10.000 con lo cual es decir cuantas más reglas ensambles en en un único código más te vas a poder
+59:58
+apalancar Por qué Porque se van a ir e digamos compensando entre Unas y otras
+1:00:04
+pero este el tema de la construcción de portfolios da para otra charla es otro es otro tema solo quería mostrar en
+1:00:10
+directo eh qué es lo que podemos hacer entonces he preparado esta aplicación eh Se puede
+1:00:16
+utilizar con estos con esta serie de activos veréis que algunos son mejores para minar que otros vamos a ver por
+1:00:22
+ejemplo esto otro ejemplo
+1:00:29
+paraa un poquito en cargar vale elcat No sé si era este a
+1:00:35
+ver análisis dice activo poco adecuado para minería de reglas de dónde sale
+1:00:43
+esto pues sale de que yo hago el test el test de con mor of smirnof y me dice que
+1:00:49
+el periodo de entrenamiento y el periodo de Test son muy diferentes Entonces es un activo muy variable cuando un activo
+1:00:55
+es poco estable a lo largo del tiempo es más difícil de predecir su comportamiento futuro Entonces ese tipo
+1:01:01
+de activos prefiero nominar losos prefiero nominar reglas ahí prefiero activos como el anterior que habíamos visto el euro dólar que tiene un
+1:01:07
+comportamiento menos con menos drift con lo cual es más probable que lo que mini ahí pueda funcionar a futuro entonces he
+1:01:15
+ido como una moto eh he explicado no sé si se ha entendido si alguien se ha perdido pero básicamente Esto es lo que
+1:01:23
+os quería Mostrar hoy eh A ver estoy estoy leyendo el
+1:01:29
+chat es mucho pedir saber cuál es el tamaño bastante vale con saber el sentido es mucho pedir no en absoluto es
+1:01:36
+un dato que conoces es un dato que conoces totalmente tú sabes el target a la hora de construir
+1:01:42
+el labeling estoy respondiendo ahora las preguntas del chat eh contra má tes
+1:01:47
+mejor sí Bueno por orden lo primero que dice Valentín morala es que es mucho pedir saber cuál
+1:01:54
+es el tamaño del movimiento sup que con el sentido es suficiente sí puede ser suficiente con el sentido mucha gente
+1:02:00
+trabaja solo con el sentido eh pero teniendo esa información del tamaño a mí me parece que no es lo mismo subir un 5%
+1:02:06
+que un 0 y medio Sabiendo esa información por qué no utilizarla yo la utilizo y me va bien
+1:02:13
+eh lo siguiente que dice Valentín es lo importante es el número de años en unos
+1:02:18
+y otros contra má es mejor Completamente de acuerdo es que es eso es
+1:02:23
+decir yo ni me lo planteaba cuando empezaba a hacer tring algorítmico lo di por supuesto y ni siquiera le di una
+1:02:29
+vuelta y de no el train 7 años por ejemplo eh train 7 años tes TR años y
+1:02:34
+luego a real y no le di ninguna vuelta lo di por como un dogma como algo asumido Esto es así y punto No se discute a la que te lías a hacer r
+1:02:42
+extraction y sacas un montón de reglas y pruebas otras maneras ves empíricamente porque ya no es una opinión ya no es la
+1:02:48
+teoría es empíricamente ves que con el simple hecho de invertir el orden y el tren y el test mejoran los resultados en
+1:02:54
+Forward que si el test es más grande eh minimizas la posibilidad de sobre
+1:03:00
+optimización O sea que si con eso de acuerdo eh podías Mostrar lo de link
+1:03:06
+disponible para Ela de los datos Eh sí a ver Alexander estará disponible en breve
+1:03:13
+me dicen que en breve estará disponible el servicio a mí me han dejado una
+1:03:18
+versión Beta es con lo que he desarrollado todo esto pero en breve saldrá durante no sé si en febrero ya ya
+1:03:24
+estará disponible hay una versión de de en quandel hay una versión clásica de
+1:03:30
+proveedor de datos que es te descargas los archivos tú los tienes que poner en tu plataforma el el upgrade la la la la
+1:03:37
+evolución de esto es que es un ea que es tan simple como habéis visto de pones el ea en el en el gráfico le das al Play y
+1:03:44
+te actualiza todos los históricos ya no tienes y lo haces super rápido ya no tienes que ir andando descargá te archivos activo por activo es
+1:03:51
+superrápido es una maravilla Es una idea genial yo encuentro a estará disponible
+1:03:57
+me decían que en febrero o en marzo lo más tardar vale para la selección de mejores características usas
+1:04:03
+importancias de características Eh me iba a salir del alma ni de coña Fernando López ni de coña no
+1:04:11
+hablando en serio no Supongo que te refieres a hacer un Random Forest y ver que que lo que se llama importancia de
+1:04:17
+características en un algoritmo en un modelo tipo Random Forest no no porque empíricamente comprobé que no servía
+1:04:23
+para nada la verdad O sea hay veces que la teoría con teoría puedo explicar otra pero lo
+1:04:30
+que os decía de la significancia de tener volumen muestral te te permite comparar cosas y simplemente la
+1:04:36
+importancia de las características sera de lejos eh una mala manera de seleccionar futures para trading
+1:04:42
+algorítmico correlación como os decía también es una pésima manera mutual information es una manera un poquito
+1:04:49
+mejor pero aún hay maneras mejores Pero eso sería otra charla si acaso Valentín
+1:04:56
+es muy difícil de predecir El tamaño ya es difícil saberle el sentido Ah sí sí sí de acuerdo Pero de alguna
+1:05:03
+manera considerar el tamaño lo que lo que estás haciendo Estás eh penaliza o sea es
+1:05:13
+decir como al final tú vas a seleccionar las las las reglas las vas a seleccionar
+1:05:19
+en función del rendimiento ese rendimiento va a depender del tamaño de de de de esas posiciones que abren no
+1:05:26
+entonces el tamaño yo creo que sí que tiene un impacto significativo a la hora de hacer el monit test no es lo mismo
+1:05:32
+porque tú utilizas riper que no considera para nada el tamaño son unos y ceros Que vuelvo a decir que además que
+1:05:38
+conceptualmente a mí me parece absurdo em son unos y
+1:05:44
+ceros Claro tú al final lo que mires la estrategia es un Cuántas veces acertó uno y cuántas veces aceptó cero lo que
+1:05:51
+vas a buscar en la estrategia es la suma de los tamaños de esos unos
+1:05:56
+para mí es fundamental vamos no entiendo mucho la duda al respecto pero para mí es fundamental además que es una información de la que dispones
+1:06:02
+discretizar una variable continua porque sí es que es una mala praxis de por sí
+1:06:08
+misma es una mala praxis si tú tienes una variable continua predecir utiliza la variable continua eh Pero bueno
+1:06:16
+eh Supongo gustos hay para todo J Eh me
+1:06:22
+pregunto por qué no sentar por régimen de Mercado claro J Fíjate lo he dicho son reglas en bruto fíjate es super
+1:06:29
+agradecido de que me hagas esta pregunta son reglas en bruto e
+1:06:35
+he he eliminado e premeditadamente ningún tipo de filtro Por qué Porque
+1:06:42
+cuando tú tienes esa regla en bruto la que te parece interesante porque has superado al monkey test o no sé qué Por
+1:06:47
+lo que sea tú coges esa regla Y entonces te lías A refinar además con hoy en día
+1:06:52
+con chpt es muy fácil tú le pones esa regla hgpt le pides que te ponga filtros de tendencia de volatilidad de lo que
+1:07:00
+sea y y ahí le puedes hacer el régimen de Mercado a posteriori es un es un
+1:07:05
+refinamiento vale ojo con esto Porque algunos me dirán vale Pero cuando le vas metiendo capas está sobre optimizando no
+1:07:13
+cuando más variables entran ya pero no es lo mismo sobre optimizar e una regla que de base tiene
+1:07:21
+perspectivas de funcionar porque cuando tú Tú tienes esta regla la regla que hemos sacado antes que hemos most estado
+1:07:26
+con el metatrader tú tienes esa regla Vale cuando tú le pongas un filtro lo que va a hacer es no va a cambiar las señales de esa regla lo que va a hacer
+1:07:32
+es eh filtrar algunas de esas señales pero no va a cambiarlas vale tú tenías
+1:07:38
+100 operaciones ahora tendrás 80 y la esperanza es que las 20 que has perdido fueran peores fueran malas no un filtro
+1:07:45
+no te cambia el corazón del sistema aspira a mejorarlo Entonces lo lo he dejado aparte eh Para tener para
+1:07:52
+centrarme solo en la extracción de reglas corazón del sistema luego evidentemente tienes que refinarlo
+1:07:58
+aparte o puedes refinarlo aparte vale le metes filtros los que quieras stop los Target profit etcétera etcétera o sea
+1:08:05
+ciertamente lo lo del régimen de Mercado hay la opción que lo hacen algunos colegas eh de minar reglas en función del
+1:08:14
+régimen se puede hacer e es como segmentas el dataset eh Por
+1:08:21
+régimen dice pues ahora alta volatilidad y baja volatilidad y segmenta reglas específicas para cada régimen esto se
+1:08:27
+puede hacer y me consta que John Jairo por ejemplo que dará una charla en este ciclo de conferencias de robot Trader lo
+1:08:33
+hace así Qué sucede em yo prefiero hacerlo a posterior y
+1:08:40
+Porque creo eh que si lo haces a priori eh aumenta el riesgo de que sobre optimices En mi opinión al final lo que
+1:08:47
+yo tengo son reglas entre comitas entre comillas un poco más e bueno que lo hacen bien a lo largo del
+1:08:54
+tiempo y luego luego ya les pondré esa capa de filtros para intentar reinaras un
+1:09:00
+poquito más y adaptarlas Y adaptarlas a lo que hay pero son son opciones que hay
+1:09:05
+José bordas muy buena charla gracias Qué impacto tienen en forw los sistemas
+1:09:10
+diseñados con fotus con alta entropía es decir John Jairo joh Jairo Hola joh
+1:09:16
+Jairo con alta entropía es decir fotus cuyas distribuciones tiendan a ser normales Qué impacto tienen en forw los
+1:09:23
+eh sistemas pues verás John Jairo me pareció eh super interesante bueno no tiene que ver con
+1:09:31
+entropía pero lo de PSI por ejemplo vale hablemos de de Future selection de hecho John Jairo dará una
+1:09:37
+charla sobre Future selection que es imprescindible el tipo es un crack verlo
+1:09:42
+porque vale la pena vale sobre Future selection qué nos interesa de una
+1:09:48
+variable primero eh que sea lo más estable posible a lo largo del tiempo en
+1:09:54
+mi opinión por qué Porque esa es una variable que cambia constantemente con un drift alocado que va cambiando en
+1:10:00
+cada periodo es completamente diferente al anterior es una variable que no tienes por donde cogerla no sabes cómo estará en el siguiente periodo no sabes
+1:10:07
+cómo estarán Forward te interesan variables que sean lo más estables a lo largo del tiempo a tal efecto hay
+1:10:14
+algoritmos o técnicas como pci vale que la descubrí gracias a John jao de
+1:10:19
+hecho pero no es lo único no solo quieres que sea estable quieres que de alguna manera esté relacionada con el
+1:10:25
+tar como decía las correlaciones no son una opción vale no son una opción porque las
+1:10:30
+relaciones entre esas variables y el target no van a ser lineales con lo cual es absurdo utilizar métricas que
+1:10:36
+presuponen que la relación es lineal no lo son de ahí la posibilidad de utilizar mutual information de hecho m mutual
+1:10:44
+information está basada en el concepto de entropía Pero esto ya son temas más
+1:10:49
+técnicos de los cuales además John jao sabe bastante más que yo y que pronto
+1:10:54
+tendremos una una charla sobre esto en específico yo no hago nada de esto yo es decidí e porque hay dos opciones o sea
+1:11:02
+ante un problema e tienes dos opciones problema de estos que de los que hablamos aquí tienes dos opciones o
+1:11:08
+afrontarlo racionalmente o empíricamente yo decidí afrontarlos empíricamente debido al volumen mostral que puedes
+1:11:14
+generar con rule extraction yo lo que hago es hago una hipótesis y la testeo
+1:11:20
+Entonces al final no no considero ni ni mutual information eh ni siquiera PS lo
+1:11:27
+hago de una manera bastante más empírica pero eso ya sería destripar por completo el corazón de lo que hago ahí está la
+1:11:33
+magia en tengo un algoritmo propio de de Future selection y tengo un
+1:11:38
+algoritmo propio de extracción vale que volviendo a lo de Valentín tiene en
+1:11:44
+cuenta no solo si el target sube o baja sino cuánto sube y baja
+1:11:50
+e Pero bueno no esperá la charla de de joho sobre Future selection porque es super interesante Javier eh podrías
+1:11:58
+contar de forma muy breve cómo funciona tu algoritmo propio de minado y selección de futures son dos alos
+1:12:03
+diferente el de minado y el de selección de futures El de selección de futures es un tema empírico
+1:12:11
+e vale eh está inspirado en cómo funciona en el
+1:12:16
+fondo riper em riper al final lo que hace es coge una
+1:12:22
+variable un indicador la que sea el me lo invento e siempre El ejemplo de siempre el r6 144 coges el r61 y lo
+1:12:29
+partes en bins lo partes en varias partes vale ordenas todas esas muestras y la pares en varias partes y buscas si
+1:12:36
+en alguna de esas partes hay más unos que ceros O sea si el target en alguna
+1:12:41
+de esas partes hay más unos que ceros por ejemplo cuando el r6 14 está entre 0 y 20 hay más unos o ceros en el target
+1:12:49
+al final est es el fondo de cómo funciona riper lo que pasa que luego como cualquier algoritmo de Machine learning se complica
+1:12:55
+infinito y luego tiene que ir podando la basura que ha hecho pero Eh Al final funciona en este concepto de [ __ ] una
+1:13:01
+variable la parte si ves en este Cachito el target si hay más unos o
+1:13:07
+ceros bueno Por qué unos y ceros porque no haces el promedio de los
+1:13:12
+targets y ya cuento demasiado eh con esto J
+1:13:17
+podrá ya sacar lo que lo que hago para Future sel al final coges una una
+1:13:22
+variable una única variable el indicador que sea C3 que veíamos antes e intentas hacer una regla con esa única variable
+1:13:28
+pu Los indicadores que hagan las mejores reglas por sí mismos Esos son los más
+1:13:33
+útiles diga lo que diga mutual information diga lo que diga la entropía ta ta los mejores indicadores son los
+1:13:40
+que hacen mejores reglas así de simple eh respecto a la
+1:13:45
+minería luego cómo lo hago Bueno pues esto lo puedes iterar eh No sé exactamente iterar eh utilizo
+1:13:55
+vale Cómo eso era para Future selection solo vale para construir las reglas las
+1:14:01
+reglas se construyen con varios indicadores al final es el concepto de de toda la vida de Pablo Ortiz que decía
+1:14:06
+Setup y o sea filtro y disparador Setup y Trigger como mínimo necesitas dos
+1:14:11
+condiciones o dos dos variables para generar mínimo dos condiciones no y al
+1:14:17
+final Esto es lo que han hecho los traders toda la vida eh algunos como Marc López de Prado se han se han
+1:14:23
+apropiado del concepto de labeling Pero al final es más antiguo que es tan antiguo como Machine learning que es el ensamblado tú coges un modelo primario
+1:14:31
+con ese modelo primario que es esa regla primaria filtras el dataset sobre ese dataset filtrado generas otra segunda
+1:14:38
+condición y así puedes ir concatenando condiciones tantas como quieras ya he contado demasiado vale e
+1:14:47
+esa herramienta Es similar al Ninja o strategy no pues no conozco en concreto
+1:14:53
+qué es lo que hace Ninja el de ninja no lo conozco la verdad eh respecto a estat
+1:15:00
+lo conozco máss y entiendo que sí que hacen minería
+1:15:05
+eh hacen minería al final minan reglas eh van haciendo combinaciones van haciendo combinatoria con con mucha
+1:15:11
+capacidad de cómputo hasta sacar las que más satisfacen ciertos criterios entiendo que sí mi visión al respecto es
+1:15:17
+que hubo como yo recuerdo la primera vez que escuché hablar de minería de reglar o de
+1:15:22
+ru extraction fue a juanmar Juan modar hace hace bastante tiempo claro me
+1:15:28
+quedaba como muy lejos muy muy lejano pero flipaba me me explotó la cabeza de decir en serio puedes automatizar el
+1:15:34
+minado de reglas aún no estaba de moda esto de la ia el python todo esto a mí me Me fascinó
+1:15:40
+eh pero no tenía capacidad técnica de realizarlo luego vi Carlos puis sagel
+1:15:46
+que ganó robot y me motivé eh Ya aprendí a programar hice un máster de ciencia de
+1:15:51
+datos y pude desarrollar y al final viendo un poquito Cómo Cómo funcionaba o lo que se sabe de cómo
+1:15:57
+funciona Porque tampoco te destripan lo que hacen no cómo funcionaba Alf visor Cómo funcionaba strategic qu La idea es
+1:16:03
+que o Mi idea es que eh hubo como una primera ola de
+1:16:08
+genex generadores de estrategias Por así decirlo por la brev genex como una primera generación de La que forman
+1:16:15
+parte strategic One y Alf visor aquí en España por ejemplo eh pero posterior a
+1:16:21
+eso eh ha habido un un un incremento brutal gracias a python gracias al al al
+1:16:28
+uso de python gracias al el auge de Machine learning ciencia de datos Y tal Y ahora de la ia que facilita generar
+1:16:35
+código y tal ha habido un un un auge brutal en cuanto a capacidad técnica y a
+1:16:42
+conocimientos entonces hay gente brillante como Alan tomillero como John jaon Ralp lo tenemos por aquí Elmer un
+1:16:48
+montón de gente que yo conozco haciendo cosas brutales que van más allá de lo que en un inicio hacían esas plataformas
+1:16:54
+entiendo que no desconozco el gat de ninja y el strategic one pero para mí en
+1:17:01
+mi mente alfis strategic One hbox todo esto forman parte como de una primera generación de ru extraction y ahora hay
+1:17:07
+como una segunda ola de un montón de de de traders con recursos y conocimientos
+1:17:13
+para hacerse sus propias plataformas que estamos llevando esto más allá Es como una segunda oleada que creo que va a ir
+1:17:19
+más allá de lo de lo previo es una opinión personal vale conozco gente brillantísima mencionado aquí al an
+1:17:25
+tomillero ganó el año pasado John Jairo Tendremos una charla Dentro de poco y hay más gente me consta que lo que hace
+1:17:31
+Elmer también es brillante y Y es que hay como una nueva oleada cargados de recursos y
+1:17:38
+conocimientos yendo Más allá de lo que solían hacer las plataformas hasta ahora qué más
+1:17:44
+lemirson Ramírez Hola Me parece un camino interesante a
+1:17:49
+recorrer bueno Yo invito a no creer nada de lo que he dicho eh nadie crea nada de lo que he dicho nadie crea que el ratio
+1:17:55
+de sar vale para nada aunque tenga un premio Nobel nadie crea que la partición clásica es lo que hay que hacer porque sí nadie crea que lo que yo digo de
+1:18:01
+darle la vuelta es mejor probar las cosas probar las cosas eh hoy en día con
+1:18:06
+python y ia se puede probar cualquier idea en cuestión de minutos eh probar las cosas no hagáis caso a mí ni a
+1:18:13
+ningún otro ponente ni a nadie probar las cosas Yo solo planteo como yo he trabajado este tema en concreto que por
+1:18:18
+otro lado no es todo lo que hago minería Me fascina pero no es no es la única cosa que hago eh
+1:18:25
+por tanto mercado número Miguel Andrés dice si las reglas de Mercado son variables y por tanto la permanencia en
+1:18:31
+mercado y el número de operaciones será variable la comparativa con el monkey test Cómo se realiza muy buena
+1:18:38
+pregunta se establece que ese test siempre está en mercado muy buena pregunta no lo he explicado tiene que
+1:18:46
+ver con mi tiene que ver con mi con mi algoritmo de de ru extractor con mi ru
+1:18:52
+extractor debido a la naturaleza de de mi algoritmo y en la versión simple que yo
+1:18:59
+he aplicado en la aplicación que he compartido todas las reglas que hacen
+1:19:06
+que salen de ahí hacen exactamente el mismo número de operaciones en tren y todas las reglas hacen exactamente el
+1:19:12
+mismo operaciones en test esto es por como está diseñado eh pero no tengo que hacer un un monkey
+1:19:19
+test para cada regla porque hace un número de operciones diferentes no no me
+1:19:24
+seguro de que todas las reglas que salen de aquí de esta aplicación tienen exactamente el mismo número de
+1:19:30
+operaciones en tren y y luego en test cuando ha monkey test para los datos de
+1:19:36
+Test también operan igual todas las reglas todas las reglas Aunque utilicen ingredientes diferentes por tal como lo
+1:19:42
+construyo hacen exactamente el mismo número de operaciones sé que es un poco raro porque uno cuando diseña sistemas
+1:19:49
+de trading e porque uno cuando hace sistemas de trading
+1:19:54
+sabe cuánto va a operar si no yo por la naturaleza del rule extractor que utilizo operan lo mismo exactamente
+1:20:01
+todos los mismos sistemas lo mismo me refiero al mismo cantidad de operaciones entonces puedo utilizar el mismo monkey
+1:20:07
+test para todos Eso hace que sea mucho más rápido al final Cómo seleccionas las
+1:20:13
+mejores en test eh las mejores en
+1:20:19
+test las que superan al monkey test selecciono eh lo compartí espera tengo
+1:20:25
+la diapositiva por aquí se verá en pantalla este este es el resumen al
+1:20:32
+final yo hago un train que es más pequeño que el test primera cosa que tienen que cumplir que el rendimiento
+1:20:38
+que también es una métrica propietaria así decirlo supera el 99% de los monos en el train lo cual es entra dentro de
+1:20:46
+lo normal y que además luego con los datos de Test superen al 90 de los monos
+1:20:53
+lo que sí que puedo decir he dicho porque lo se puede comprobar una vez más no me hagáis caso a mí comprobarlo tú
+1:20:59
+generas 10,000 reglas de trading vas aquí al test No es cierto que las que tengan mayor ratio de shar las que
+1:21:05
+tengan mayor profit factor las que tengan mayor ratio No es cierto que esas sean las que se vayan a comportar mejor luego Simplemente no es cierto esto es
+1:21:13
+un dogma de toda la vida del trading y no es cierto y es muy fácil de comprobar hoy en día no me creáis a mí comprobarlo
+1:21:21
+generar miles de reglas y comprobarlo si es cierto que las que sacan mejores métricas en test por eso utilizo el
+1:21:28
+monky test En definitiva Pero bueno Esto es muy muy radical lo que digo me gano
+1:21:33
+enemigos con eso pero pero bueno es lo que pienso qué más yauma has trabajado con
+1:21:42
+El algoritmo ext tris Sí he trabajado con todos los Tris que existan y que puedan existir con todos Qué opinión
+1:21:49
+tenes yo decidí descartar cualquier algoritmo de Machine learning como digo para m no es un problema de Machine
+1:21:55
+learning es un problema de minería entonces tanto reaper que al final lo que hace es un problema de todos estos
+1:22:01
+algoritmos desde reaper a todos los relacionados con Tris lo convierten en un problema de de
+1:22:08
+Machine learning la mayoría de ellos exigen además que sea un problema de clasificación con lo cual para mí se
+1:22:14
+pierde información que es del tamaño del movimiento pero sí lo he probado
+1:22:20
+y decidí hacer mi propio algoritmo probé este y muchos más incluso
+1:22:26
+algoritmos de de una cosa una historia que se llama online learning que no es no es de hecho mi trabajo final de
+1:22:32
+Master fue sobre online learning que tenía que ver con trees que son árboles de decisión que se van adaptando con
+1:22:38
+cada nuevo dato no es reform learning sino son algoritmos que van aprendiendo con cada nuevo dato que va
+1:22:44
+proporcionando el mercado descarté todo todo todo lo que tenga que ver con Machine learning lo lo descarté porque
+1:22:51
+me parecen máquinas de sobre optimizar decidí hacer mi propio ormo buscando también algunos objetivos como lo que he
+1:22:57
+comentado antes es que todas las reglas tienen exactamente la misma cadencia operativa que esto entiendo que para
+1:23:03
+algunos les parecerá una limitación porque no todos los sistemas tienen que tener la misma cadencia operativa pero
+1:23:09
+eh yo he encontrado Ahí es donde yo he encontrado el filon digámoslo así qué
+1:23:16
+más la alta entropía implica mayor incertidumbre pero si la distribución es normal Esa incertidumbre está acotada
+1:23:22
+esto puede aportar estabilidad a las Totalmente de acuerdo Totalmente de acuerdo además voy a disfrutar como un
+1:23:30
+niño pequeño La charla de joho sobre estos temas Totalmente de acuerdo isac
+1:23:35
+tras fan yo de ti isac encantado de tenerte por aquí qué más tengo por aquí
+1:23:41
+Ire carana Gracias casco mira Eric el fin de semana voy a Bilbao si estás por
+1:23:48
+ahí pero tampoco lo de los monos tampoco lo de los monos no sé a qu se refiere ahora mismo pero
+1:23:56
+e también no no me creáis O sea no es cuestión de debatir yo no tengo que convencer a nadie yo expongo lo que yo
+1:24:03
+utilizo eh os digo y aquí os exijo os exijo no Os pido un acto de fe yo lo he
+1:24:09
+comprobado empíricamente os animo a todos comprobarlo empíricamente ya está yo tampoco voy a
+1:24:15
+convencer a nadie ni ni Necesito la forma de selección solo significa que podías estar seleccionando las más sobre
+1:24:21
+optimizadas usas todo el histórico para elegir no eh No no utilizo todo el histórico
+1:24:28
+para elegir eh No sí podía ser las más sobre
+1:24:34
+optimizadas Exacto pero ten en cuenta que la la selección se hace solo en el train o sea
+1:24:40
+una cosa sobre optimizada Es normal que funcione una cosa una fut seleccionar en el tren
+1:24:48
+normal que esté sobre utiliizada para el tren El caso es que no lo esté en el test eh Por eso lo de por eso que el
+1:24:57
+test me importa me interesa que sea mucho más grande que el train así minimizo el riesgo de sobre
+1:25:02
+optimización y te quedas en las mejores frente a las aleatorias eh usas todo el
+1:25:07
+histórico no no utilizo todo el histórico para elegir y te quedas las mejores frente a las aleatorias me quedo
+1:25:14
+las que de manera significativamente las que manera significativa mediante un test estadístico puedo afirmar que con
+1:25:21
+un intervalo de confianza superior al 99% no se deben al azar y además por como construyo el tren
+1:25:28
+y el test además de no deberse al azar son reglas que difícilmente van a estar
+1:25:34
+sobre optimizadas porque sobreviven En un test que es mucho más largo que el train que es donde han sido
+1:25:40
+generadas me quedo sin sin salid felicidad yaum por la ponencia me ha gustado mucho tu experiencia
+1:25:49
+modelo qué tanto mejor los resultados vale muy buena pregunta porque
+1:25:55
+esto también es un otro dogma del trading algorítmico cierto es que en trading
+1:26:00
+algorítmico yo aquí he hablado de ser de ser de tirar de empirismo muchas veces
+1:26:05
+cierto es que en algorítmico al final las ideas se muiden por los resultados en real cierto es yo no he tenido tiempo
+1:26:11
+yo no llevo tanto tiempo en el training algorítmico aunque aunque pues Empecé con el el posgrado de la upm empecé en
+1:26:18
+2016 pero durante este tiempo he tenido dos hijos he dejado el trabajo que tenía
+1:26:23
+de la vida eh Bueno cosas mudanzas cosas personales
+1:26:29
+eh yo no he tenido mucho tiempo para dedicarme algorítmico y este enfoque en particular hice un primer intento en el
+1:26:36
+2023 para robotrader y desde entonces he estado he estado desarrollando básicamente en mi tiempo libre porque
+1:26:41
+como digo no es lo único que hago no es el único enfoque que utilizo el de r extraction me apasiona Pero no es lo
+1:26:47
+único que hago vale como anécdota Me acuerdo cuando cuando fui a la entrega de premios de de robotrader que que
+1:26:53
+había hab ha quedado segundo en la cena de después con eh en la cena de después con con Roberto
+1:27:00
+Marcos y había otros Roberto Marcos me dijo oye yauma muy interesante todo esto de de ru sttion super interesante eh
+1:27:06
+Pero al final te ha ganado un canal de Don Chan porque mi colega Federico caputi que es el que ganó la edición al
+1:27:12
+final aplicaba un un básicamente un canal de donch quiero decir que muchas veces nos complicamos la vida muchísimo
+1:27:20
+y al final hay cositas simples que a veces funcionan entonces rule extraction me encanta para forex creo que es ideal
+1:27:26
+Eh pero en otros mercados como cryptos o como el nastac o tecnológicas que tien
+1:27:32
+un sg alcista Hay cosas más simples para hacer vale pero para forex me me me gusta muchísimo qué más Eh entonces no
+1:27:40
+he tenido un tiempo e de tener esto en real este año ya sí abriré cuentas en real con Bueno ya aplico algunas cosas
+1:27:46
+pero abriré cuentas en real con esto y además yo os he presentado aquí una versión muy simple estoy en un equipo en
+1:27:52
+comal logic en la cual pretendemos llevar esto al extremo en el ejemplo de muestra de la aplicación trabajamos con
+1:27:59
+800 y pico variables esperamos trabajar literalmente no es una manera de hablar literalmente con millones de variables y
+1:28:06
+además variables que no sean tan simples como eh indicadores técnicos oigo eco por
+1:28:14
+ahí Hola hola vale Sí pretendemos trabajar con millones de variables adás
+1:28:20
+variables que no sean tan simples como indicadores técnicos variables que habrán sufrido transformaciones etcétera
+1:28:26
+etcétera etcétera o sea llevarlo al extremo esto eh requiere una infraestructura que yo por mí mismo no
+1:28:31
+no era capaz Entonces no he tenido eh esta versión simple ya te digo que este mismo año ya estará ya está en
+1:28:37
+producción pero vamos a desarrollar una cosa bastante más compleja eh qué tanto mejor que tienes Vale qué
+1:28:44
+más el número de operaciones para el monkey test lo tienes fijo o viene de alguna media no como he dicho eh por por
+1:28:52
+como construyo el rule extractor como mi algoritmo de de rule extraction me
+1:28:57
+aseguro de que todas las reglas que salen de ahí tengan exactamente la misma cadencia operativa entonces me vale el mismo monky test para todas porque todas
+1:29:05
+sé que en el mismo periodo van a hacer la misma cantidad de operaciones Cómo logras que todas las
+1:29:10
+reglas tengan la misma cadencia bueno eso alguna vez lo he
+1:29:16
+explicado por algún chat por ahí pero al final es irse a las tripas de riper ver
+1:29:21
+qué es lo que hace bien que es binarizar una variable ent si tú una variable la partes en cachitos la puedes partir en
+1:29:28
+en 10 cachos en dos cachos en cinco en los que quieras No pues tú Imagínate que tú partes la variable en tres
+1:29:34
+cachos vale Y luego el Cachito donde mejor lo hace donde tienes mejores
+1:29:40
+resultados lo vuelves a partir en tres cachos al final las operaciones serán una novena parte del total dividiste un
+1:29:47
+total entre tres y lo vuelves a dividir entre tres sabes que el número de operaciones será ese una novena parte
+1:29:52
+del histórico es un ejemplo eh No sé si se entiende Pero esa la Esa es la
+1:29:59
+idea básicamente eh pero si eliges en base los mejores
+1:30:05
+test es lo mismo que usar todo el histórico Eh no luego hay un
+1:30:11
+forw usar todo el histórico Sí claro o sea claro es que si no utilizara pues no
+1:30:17
+no no estaría ahí un tren y un test de De qué otra manera es decir tú para para desarrollar una estrategia necesitas
+1:30:23
+datos eso datos necesariamente van a ser históricos World De qué otra manera podrías si no aún así me me reservo que
+1:30:31
+es una aportación que le robo a mi colega l anomor me resero después de eso dejar un pequeño intervalo de Forward
+1:30:37
+para ver si todoo correctamente eso sí que es puramente oro sample vale Y si en
+1:30:44
+ese oro sampel ya lo hace bien pues tira para adante qué más que no sea mucho peor que
+1:30:51
+el train y qui es el train pequeño
+1:30:56
+no ves la diferencia bueno eh No ves la diferencia vale
+1:31:04
+em no ves la diferencia e vale vale un tema interesante
+1:31:14
+eh un tema interesante Cómo lo explico esto em pequeña historia personal yo hice el
+1:31:21
+viaje a Islandia Me encantó en Islandia solo hay una carretera que le llaman de ring ro la carretera del anillo que da
+1:31:28
+la vuelta a la isla vale esa carretera se supone que es una autopista pero ya
+1:31:34
+sabéis Cómo es Islandia a veces ha habido volcanes y la autopista ha quedado destrozada a veces hay nieve y a
+1:31:40
+veces el camino es de tierra a veces atraviesas un pueblo y a veces vas por
+1:31:45
+por una ciudad de las pocas que hay entonces es un camino es como un contexto que va cambiando tú das la
+1:31:50
+vuelta a Islandia vas a encontrar todo eso nieve autopista ciudad vas a encontrar
+1:31:58
+diferentes contextos con el coche entonces tú tienes dos maneras de enfocarlo tú quieres ir con un coche que te sirva para todos los terrenos que te
+1:32:04
+vas a encontrar con lo cual por definición será mediocre para todos no
+1:32:10
+porque el Ferrari te ira muy bien para autopista pero por tierra a lo mejor no te va tan bien y luego un 4 por4 estos
+1:32:16
+gigantes te irá muy bien por cuando el camino es muy empedrado o cuando hay nieve pero a lo mejor por ciudad no es muy práctico entonces el utilitario
+1:32:24
+medio te lo hará más o menos bien en todo no destacará en nada Pero te lo hará bien en diferentes contextos Pero
+1:32:30
+al final es mediocre es un rendimiento mediocre siempre haciendo lo que yo propongo
+1:32:36
+es las reglas serán especialistas en un contexto determinado en train que es un
+1:32:43
+periodo que es reciente Y que además es cortito Por qué Porque apuesto a que el
+1:32:48
+futuro se va a parecer a mi train es decir esto también esto también escrib un artículo
+1:32:54
+sobre esto que empíricamente se puede demostrar que en forex al menos en el ámbito de forex eh el futuro el futuro inmediato es más
+1:33:02
+probable que se padezca al pasado reciente que al pasado lejano Entonces yo lo que quiero es una regla que sea
+1:33:08
+especialista en este pasado reciente Por qué Porque apuesto que al futuro inmediato se va a aparecer a este
+1:33:14
+contexto luego además si esta regla sobrevive a contextos diferentes en el pasado mejor que mejor no es lo mismo
+1:33:22
+que sacar la regla con el histórico entero por qué Porque si sacara la regla con el histórico entero sería una regla
+1:33:29
+mediocre adaptada a todos los terrenos es lo que decía del coche y de los diferentes terrenos de Islandia Entonces
+1:33:35
+si tú en Islandia los últimos 100 km han sido autopista Pues yo apuesto que los
+1:33:40
+próximos 10 van a ser autopista pero como no tengo la certeza Quiero una regla que esté adaptada para lo más
+1:33:47
+probable que es que los próximos 10 km sean autopista pero que a la vez si por lo que sea de repente el contexto cambia
+1:33:53
+mínimamente me pueda sobrevivir Si de repente los próximos 10 km no son autopista sino que empieza a nevar pues
+1:34:00
+quiero que ahí también eso pueda sobrevivir por eso Una pregunta que hizo no sé si fue J o quién fue de minar
+1:34:06
+según régimen es no no Yo quiero que la regla sea especialista en un contexto determinado que es el más reciente
+1:34:11
+porque apuesto que el futuro inmediato se va a aparecer Pero además quiero que sea una regla lo suficiente robusta de
+1:34:17
+que si no se da ese contexto si se da otro al menos me sobreviva de de esta manera tienes una
+1:34:24
+regla buena para lo que es más probable que suceda de inmediato si tú Minas con todo el
+1:34:31
+histórico tendrás una regla mediocre tendrás una regla que lo hará medianamente bien a lo largo de
+1:34:36
+diferentes contextos no sé si si se enter si se entiend si me explica muy bien o me he liado mucho sí pero no lo
+1:34:43
+caracterizas entonces puedes elegir casualidad usas que la confirme el test y si no la descartas Así que también las
+1:34:48
+cosas por casualidad Y eso te vale pues es lo mismo que usar todo No no es lo mismo pero tampoco sé
+1:34:54
+cómo explicarlo mejor la verdad Pero puedes probarlo o sea de hecho una vez más es un tema empírico porque esto es
+1:35:00
+otro gran dogma del del trading tú dices no y yo sé además los resultados avalan por ejemplo a Ivan Sherman Ivan Sherman
+1:35:06
+por ejemplo dice y otros eh creo que ser Sanchez Roberto Marcos colegas a los cuales les abalan los resultados y la y
+1:35:13
+la trayectoria dicen cuando más histérico entrenas mejor porque vas a exponer tu sistema a mayores contextos
+1:35:20
+diferentes bueno es que es fácil de comprobar que no O sea tú puedes [ __ ] lo que me has dicho tú Aquí dice si
+1:35:27
+tienes 10 años de histórico Por qué no Minas con los 10 años Bueno yo he hecho la prueba yo he minado con 3 años 4 años
+1:35:34
+5 años 6 años 7 años 8 años 9 años 10 años y no es cierto Es radicalmente
+1:35:39
+falso que Cuanto más histórico mejores reglas para el futuro inmediato No es cierto simplemente simplemente no es
+1:35:46
+cierto entonces Más allá de todo lo que te he podido explicar de las carreteras de Islandia y tal Simplemente no es
+1:35:51
+cierto No es cierto que sea lo mismo minar con 3 años que con 10 independientemente de que no hagas
+1:35:57
+validación de ningún tipo Olvídate los datos de Test Minas con 3 años obtienes unas reglas Minas con 10 años O tienes
+1:36:04
+otras 10,000 reglas compara los resultados en forw sin hacer selección de ningún tipo de Esas reglas las que
+1:36:09
+has minado primero primero las que has minado con datos más recientes de media obtendrán mejores resultados en Forward
+1:36:15
+y segundo No es cierto que cuando más largo sea el el periodo que utilizas para entrenar mejores resultados No es
+1:36:21
+cierto Entonces no es lo mismo pero empíricamente lo puedes comprobar no es lo mismo que tú Mines con 10 años a que
+1:36:28
+Mines con los últimos cuatro no es lo mismo los resultados cambian bastante creo que además si no me equivoco algún
+1:36:35
+artículo he publicado sobre eso en concreto uno que fue de hecho portal entrades magazine creo que iba sobre
+1:36:42
+esto J yo sento por régimen y creo sub activos Y mino sí sí es perfectamente
+1:36:48
+perfectamente válido Solo que solo que prefiero hacerlo a
+1:36:54
+posterior por lo que decía quiero quiero un coche que esté que esté adaptado a al escenario que tengo ahora pero que si el
+1:37:00
+escenario me cambia ese coche más o menos me pueda sobrevivir si yo mino reglas por régimen y el régimen me
+1:37:06
+cambia es más probable que esa regla me palme Pero esto esto Esto sí que no lo
+1:37:12
+tengo tan comprobado solo es un un un gusto personal correcto porque hay premisa no
+1:37:18
+extracción de casualidad a volumen pero es igual Es una diferencia de concepto fundamental todas las que no sean de el
+1:37:23
+régimen actual pierdes todas las cosas ahí ya me voy perdiendo un poquito más
+1:37:32
+y no sé eh dejarme recordaros que eh Ah no os he dicho cómo se accede a la
+1:37:38
+aplicación yo he utilizado aquí una en local porque corre un poquito más rápido
+1:37:44
+para hacer la demostración digamos Pero es tan fácil como a ver si lo
+1:37:51
+espérate lo tengo por aquí vale Sí eh No sé si se ve por pantalla
+1:37:59
+pero este es el Este es el Epa Esta es la aplicación
+1:38:04
+trading rules stream.app cualquier caso por mis redes sociales en
+1:38:10
+Twitter @ yant olip con al final de yaom anol plaza @ yant olip o por linkedin es
+1:38:17
+fácil encontrarme y ahí está el acceso vale para acceder ya digo está abierto para cualquier
+1:38:24
+cualquier usuario de cualquiera de la comunidad de robotrader quemi y qualify models solo Tienen que entrar aquí a la
+1:38:31
+comunidad de discord y ahí yo les doy el password para poder acceder y juguetear con esto y lanzo un reto ya que estamos
+1:38:38
+lanzo un reto si alguien un reto que a mí me hubiera gustado en su momento cuando yo empezaba si alguien quiere
+1:38:45
+participar en robot pero se ve un poco superado no sabe cómo hacerlo o no tiene ideas de trading de de vale Qué sistemas
+1:38:51
+puedo construir pues aquí estamos que contacte conmigo que yo encantado vale Para eso he hecho la aplicación para que
+1:38:57
+cualquiera la pueda utilizar y para que cualquiera pueda sacar ideas en bruto a refinar eh Como
+1:39:04
+he explicado aquí estamos lanzo el reto eh si alguno quiere no dude no no no dude
+1:39:11
+no dude en contactar porque a mí me haría ilusión es como lo que decía no empecé como estudiante seguí como
+1:39:17
+concursante y ahora ya estoy aquí como ponente no pues si puedo ayudar a otros a los que vienen detrás
+1:39:24
+yo feliz le debo le debo bastante a robotrader me siento afortunado de todo
+1:39:29
+el camino que he recorrido aquí de toda la gente que he conocido entre ellos muchos de los que están aquí joh John
+1:39:36
+John Jairo Elmer no directamente robot pero a raíz de haber participado aquí empezar a conocer gente del mundillo del
+1:39:42
+trading pues Elmer Pues eso me gustaría ayudar a los
+1:39:48
+que vienen de atrás vale No sé alguna cosita más juanci
+1:39:55
+Master Elmer ya me gustaría a mí tener la capacidad técnica de Elmer esto es una cosa que a mí me lastra yo no soy un
+1:40:00
+gran programador eh De hecho no me gusta programar lo hago por necesidad admiro mucho a todos
+1:40:07
+aquellos que tienen a los hombres Orquesta como Elmer como Alan que son capaces de hacer unas mega
+1:40:13
+infraestructuras son capaces de Hacer código optimizado y además tienen muy buenas ideas para hacer trading esto lo
+1:40:20
+admiro mucho yo necesito de un equipo para ir más allá J seguimos por el grupo Sí hombre
+1:40:26
+siempre un gran aporte a la charla Gracias José pues encantado eh Javier
+1:40:32
+Gracias e no sé si alguien tiene alguna duda es el momento y si no ya os lo digo Soy
+1:40:38
+siempre disponible e y por dar algún consejo a los que
+1:40:44
+quieran participar en robot Trader si van con forex cuidado con los datos del proveedor porque hay sorpresas por ahí
+1:40:51
+como ya he mostrado em qué más qué más puedo
+1:40:56
+decir No sé animar a todos a participar en roboter me parece que es una iniciativa bestial para para el trading
+1:41:02
+algorítmico en España eh tanto el posgrado creo que es el único programa universitario e de una
+1:41:10
+universidad seria la politécnica de Madrid creo que es una iniciativa brutal todo lo que ha hecho Eduardo López eh es
+1:41:18
+que tenemos un ecosistema muy interesante entre robot Trader entre Darwin x que fueron patrocinador de robotrader durante tantísimo tiempo y
+1:41:25
+que ahora Lamentablemente por una decisión inexplicable de la cnmv ya no pueden patrocinar como hacían como
+1:41:30
+solían pues tenemos un ecosistema muy interesante y además tenemos gente que llevan toda la vida en esto tenemos x
+1:41:37
+Trader tenemos publicaciones como stader 24 años ya tenemos traders como Roberto
+1:41:43
+Marcos Como sergi Sánchez con un montón de yo animo a todo el mundo que que se
+1:41:50
+anime a a participar en contribuir a que robot trader siga creciendo yo de verdad estoy agradecido todo lo que me ha
+1:41:56
+venido a través de roboter ha sido positivo y por eso estaba especialmente ilusionado contento de estar aquí Hoy
+1:42:03
+qué más me dicen forex versus futuros sí Exacto si utilizas futuros ya no hay
+1:42:08
+problema eh Muchas gracias yama ha estado genial pues muchas gracias Nadia
+1:42:14
+eem y nada eh si vais entrando en lo de la aplicación pues os iré dando acceso
+1:42:19
+Vale y y seguir en contacto conmigo no sé si alguno más tiene alguna
+1:42:25
+duda aprovecho sí eh el que quiera puede abrir el micrófono y preguntarle
+1:42:32
+directamente siar el chat claro y excelente ponencia Espero que no sea la última ya han
+1:42:38
+quedado hay cosas que decías Para futuras ponencias Pues según vas avanzando seguro que tienes material
+1:42:45
+para para próximas bueno el año que viene el año que viene podríamos venir con un año detrá récord en real
+1:42:52
+exactamente y decir hice estas cagadas hice lo otro sí y decir que dar wines
+1:42:57
+participa este año también conas de metatrader 5 me alegro me ha alegrado porque la verdad es que el año pasado es
+1:43:02
+es una novedad este año que puede podéis programar en python y tenéis futuros o
+1:43:08
+acciones tienes que elegir entre cuenta de futuros o o de acciones
+1:43:14
+y y muy bien a mí me ha gustado mucho hay alguien que quiere hacer alguna pregunta en vivoen
+1:43:23
+estado como una hora casi respondiendo preguntas al principio ID he ido muy
+1:43:29
+rápido y y luego me he enrollado con las con las sí ha estado ha estado muy bien así has dejado muchas preguntas jaume
+1:43:36
+jaume Me oyes se me oye o qué es bueno buenas No pues una charla mu
+1:43:43
+muy muy buena muy buena y Y como siempre que hay charlas de este tipo con muchas
+1:43:49
+ideas que ya se me han quedado en la cabeza que tengo que tengo que hacer alguna cosilla de esto cuenta conmigo eh Hablamos no
+1:43:57
+porque roll extraction yo la verdad es que no más allá de de optimizar tampoco
+1:44:04
+lo he utilizado mucho más No pero me has dado Bueno me has dado alguna idea lo
+1:44:09
+que decías no buf te explota la cabeza un poquito con algunas conversaciones de estas que a veces tenemos y que son
+1:44:15
+genial estas charras son muy muy muy muy buenas muy buenas yo yo siempre lo he
+1:44:20
+dicho eh cada vez que que he tenido que alguien me ha invitado a hablar de lo que sea y me preguntan siempre hay
+1:44:27
+preguntas como clásicas no de de libros de trading y tal y o algún consejo y yo
+1:44:33
+siempre digo lo mejor que me ha pasado es poder conocer a otros traders porque
+1:44:38
+siempre digo que esto era como una actividad como un Lobo solitario de muy de Freaky en mi habitación eh con mi
+1:44:43
+ordenador y no me relacionaba con nadie no conocía a nadie de mi entorno dedicado a esto y a raíz de poder
+1:44:49
+conocer pues en mi caso fue venir aquí a robot conocer a a la gente que suele estar habitualmente allí son otros
+1:44:55
+ponentes y tal a raíz de reaccionar me por grupos de chat y todo esto sobre
+1:45:01
+todo conocer en persona gente como isac y tal pues te salen ideas te salen e es
+1:45:06
+super estimulante yo para mí prefiero si isak y yo tenemos una charla de aquí unos días referente a la ponencia o lo
+1:45:12
+que sea seguro que me salen más ideas que leyendo un libro en mi caso eh yo siempre recomiendo rodearte de otros
+1:45:18
+traders porque es lo más estimulante es lo que más ideas te va a dar es super estimulante al final con un libro no
+1:45:24
+puedes un libro lo lees y no puedes interactuar con él no puedes tirar del hilo con un colega correcto correcto
+1:45:30
+correcto es con un colega tiras del hilo Ah hablando de libros pregunta clásica era qué libro
+1:45:36
+recomiendas Bueno pues ahora ya tengo el de isac El libro de Isaac de python
+1:45:42
+aplicado al training algorítmico ahora recomiendo siempre este Se me olvidaba Perdona no hace falta no hace
+1:45:49
+falta con sí eh lo que dice Exacto Exacto es lo que decía Elmer es
+1:45:56
+una versión inicial que que no utiliza ningún tipo de transformación son indicadores en bruto de de de que están
+1:46:04
+disponibles en en metatrader e eh Son indicadores que están bruto de
+1:46:10
+metat pero realmente de cada uno de esos indicadores puedes hacer infinidad de
+1:46:15
+transformaciones pero infinidad lo que pasa que claro es lo que decía al final te juntas
+1:46:21
+literalmente con millones de variables y ya no es algo que pueda manejar yo en mi eh portátil ya necesito una
+1:46:28
+infraestructura necesito eh unas capacidades técnicas que actualmente me exceden no entonces por eso estoy con un
+1:46:35
+equipo que es el mejor que yo podría haber soñado hace años para poder desarrollar eso a ese nivel Porque
+1:46:42
+además conozco los resultados de gente que lo hace a ese nivel Y es que es
+1:46:48
+estratosférico O sea no no tiene nada que ver cuando tú puedes generar transform acciones y juntarte con tantas
+1:46:54
+variables y hacer tantas combinaciones posibles salen cosas que son difíciles de creer que yo ni las menciono pero son
+1:47:00
+difíciles de creer pero las he visto y gracias a que las he visto voy hacia
+1:47:05
+ello Cómo se titula el libro de Isaac eh Ah lo podría haber traído
+1:47:11
+eh python aplicado a tring algorítmico creo si no me equivoco Isaac Perdóname
+1:47:17
+pero vamos en Amazon lo encontráis rápido trading algorítmico con python eso es TR en algorítmico con python
+1:47:25
+bueno que necesitas python eh es python Es python mira Santiago confirma lo de las
+1:47:32
+transformaciones eh Sí de hecho de hecho este este me voy
+1:47:38
+este fin de semana voy a bilado a Bilbao con mi equipo y casualmente estos que os decía que han llevado esto al extremo
+1:47:45
+que trabajan con infinidad de transformación y se juntan con millones de variables también son de virbo hay
+1:47:50
+dos de ellos que también son de vir coincidir con ellos espero eh Ahora mientras estaba aquí en la chara me van
+1:47:56
+llegando mensajes de que ya están quedando para para coincidir Con este equipo de gente que son extraordinarios
+1:48:01
+e Sí sí tiene un potencial bestial yo he hecho una versión simple para que cualquiera pueda utilizarla para que
+1:48:07
+cualquiera pueda codificar en en metatrader que es lo típico porque claro cuando te lías hacer transformaciones ya
+1:48:14
+es muchísimo más difícil de de codificar en metatrader se pierde no la interpretabilidad pero se
+1:48:21
+pierde bueno tendrías que codificar mucho para llevar esas trans esas transformaciones a metr Trader y deja de
+1:48:27
+ser útil Entonces ya tienes que conectar directamente python a Met Trader ya es otra ya es otra historia es complicado llevarlos a
+1:48:34
+tiempo real eso es necesitas una infraestructura una optimización de código etcétera esto hay gente hombres
+1:48:40
+Orquesta como Alan que lo pueden hacer eh los mortales eh vamos más lentos pero
+1:48:45
+llegaremos llegaremos directamente con python Exacto sí sí sí
+1:48:50
+sí e no sé contento y agotado Ya llevo
+1:48:56
+cascando pero encantado eh Muy bien muy bien pues
+1:49:02
+nada voy a dejar la grabación alguien quiere decir algo Antes de que pare la
+1:49:07
+grabación Ah me han preguntado por ejemplo mi
+1:49:12
+familia mi mujer dice cuándo estará en YouTube digo no sé tarda unos días No sí
+1:49:18
+uno o dos días No te preocupes que queda muy bien pues Exacto gracias a
+1:49:27
+robotrader gracias a Eduardo que es el alma detrás del robotrader encantado bueno sin vosotros
+1:49:32
+sin vosotros no sería nada esto pues nos vemos el año que viene
+1:49:42
+exactamente la entrega de premios es el el viernes 13 no s pas el 13 de junio sí
+1:49:49
+jio Ah pues me encantaría seguramente la qued de X será el 14 Así que Oh motivo a
+1:49:56
+todo el mundo va a ser viernes son dos días Eh son unos días fantásticos de de ir a a por el ambiente por la gente de
+1:50:02
+Madrid son dos días fantásticos de si os lo podéis montar yo lo hice el año pasado acompañando a Alan que ganó eh
+1:50:10
+primero la entrega de premios un jueves no y x Trader lo la quedada de X Trader el sábado el ambiente Sí este año lo
+1:50:16
+hemos puesto más fácil porque es el viernes es el Viernes 13 O sea que perfecto Perfecto perfecto un día Ah
+1:50:24
+pues muchas gracias Sí sí pues si puedo a poco que pueda me lo monto encantado
+1:50:29
+encantado de de volver a verte en persona pues nada voy a detener la grabación
+
+
+
+Entrega de premios XV edición Robotrader 13 Junio 2025
+
+Y bueno, he ido a buscar agua. Perdonad porque es que el año pasado se me quedaba la boca seca y no podía pronunciar bien. A ver,
+1:17:50
+bueno, me gusta empezar siempre con un disclaimer y es que todo lo que diga mi perspectiva, no es la realidad. Eh,
+1:17:56
+considero que el trading algorítmico al final no es una ciencia empírica. A mí lo que voy a explicar me funciona,
+1:18:03
+por lo tanto, eh, no os lo toméis como la verdad absoluta, porque considero que
+1:18:08
+no es, a cada persona le funciona una cosa. A mí lo que voy a explicar son mis
+1:18:13
+dogmas y considero que cada persona tiene que formar sus propios dogmas.
+1:18:19
+Bien, vamos a hacer un recap para los que no hayáis visto mi ponencia del año pasado.
+1:18:25
+Sigo con la misma filosofía. Una buena eh una buena metodología es mejor que un
+1:18:31
+sistema independiente. Hice la analogía con el taller de coches. ¿Qué significa esto? Que puedo tasar mejor una fábrica
+1:18:37
+de coches eh el éxito que tiene una fábrica de coches versus un taller
+1:18:43
+mecánico. ¿Estamos de acuerdo todos con esto? Bueno, sí.
+1:18:48
+más o menos. Bueno, bien, continuamos. Continúo con la misma metodología, como
+1:18:54
+he explicado, que es rule extration con un sistema de de validación SV3 elevado a la n, que eso significa el número de
+1:19:01
+veces que yo puedo replicar toda esta metodología. Y esto me da como resultado una validación masiva de metodología. Lo
+1:19:07
+dicho, esto está en la ponencia del año pasado, pero hago así como un repaso para que para que quede claro.
+1:19:13
+Volviendo un poco al tema de tecnológico, utilizo Python para extracción de reglas y para algo más que
+1:19:19
+explicaré a continuación y lo combino con Strategy One. Ahí abajo, pues bueno, ya sabéis que lo modifico porque te
+1:19:27
+permite una parte de de código abierto en Java que es muy completo y está muy bien. Me hace gracia porque Edu me me
+1:19:33
+comentó que le sorprendía que siguiera utilizando Strategy Quan Edu
+1:19:39
+y al final.
+1:19:44
+Correcto. Sí, sí, porque al final eh bueno, lo que expliqué también es que tengo replicado en Python todas las
+1:19:51
+reglas que tiene Strateg One, por lo tanto eh trabajar en una simbiosis puedo puedo puedo combinarlos perfectamente.
+1:19:57
+Luego, como he dicho, tengo una parte de desarrollada de desarrollo propio dentro de Strategic One para que todo esto
+1:20:05
+pueda funcionar en conjunto. Y bueno, vamos a hacer la comparativa del año pasado versus este año
+1:20:13
+métricas 2024. Conseguí un net profit de un 7,66% este año, un 83,7,
+1:20:21
+máximo drawdown en 2024, un 5% este año de un 4,8, el mismo riesgo más o menos,
+1:20:28
+no no he arriesgado más con un ratio robot trader en 2024 de 1,56 y en 2025
+1:20:34
+de un 17,14. Puntos obtenidos 2024 78 y en 2025 105.
+1:20:42
+¿Por qué explico todo esto? que ha cambiado, que ha cambiado de un
+1:20:47
+año a otro. Y ahora es una pregunta que quiero lanzar al público y quiero que como mínimo
+1:20:53
+Sergi, Alberto y por aquí tenéis información, pero quiero que me me respondáis.
+1:21:02
+Perdona, vale, pero hay algo que ha cambiado en la metodología.
+1:21:09
+algo, ¿no? Nadie tiene ninguna idea al respecto.
+1:21:17
+Bueno, validación, etcétera, algo más, ¿no? Experiencia, ¿no? Sí, eso, eso por
+1:21:24
+supuesto. Vale, bueno, os lo explico yo.
+1:21:32
+Vale. lo ha ajustado más a los datos cercanos. No, pero me gusta.
+1:21:41
+Ya, ya he desarrollado un filtro en multiversos sintéticos.
+1:21:49
+Suena suena peli de Marvel total, pero vale, era fácil, era fácil.
+1:21:56
+Vale, eso que equivale, he tenido que construir un framework de generación de
+1:22:02
+datos sintéticos con lo que ello conlleva. Al final lo que hacemos es simular
+1:22:08
+futuros alternativos. Quien diga futuros puede ser pasados porque al final me va me baso en la data en la data que hay,
+1:22:13
+la disponible. que al final modifico el pasado creando escenarios plausibles pero diferentes.
+1:22:20
+Y a todo esto, una vez yo tengo mi metodología de minado, lo ha añadido al final del todo, cuando pasa todos los
+1:22:27
+tests, lo último que tiene que hacer es ser rentable en los n mercados sintéticos.
+1:22:33
+Sí, perfecto. Así como frase, solo aquellas estrategias capaces de
+1:22:39
+adaptarse, aunque el mercado no repita su camino exacto. Si me permitís, un segundito.
+1:22:49
+Bien, un poco de historia. Esto es una conversación que tuve con Martístin,
+1:22:56
+que ahora también voy a explicar por qué la ha puesto, donde le preguntaba porque lo vi en una ponencia que hablaba del
+1:23:03
+tema de los mercados sintéticos y esto es el año 2022. Yo llevo detrás de generación de de datos sintéticos desde
+1:23:09
+hace muchos años. También explicaré el por qué. Y nada, le preguntaba
+1:23:14
+básicamente si puedo preguntar qué técnicas empleas para generar la data sintética, tal. y me dije, "Depende el
+1:23:20
+uso, pero generalmente creamos señales senoidales y le añadimos ruido blanco, etcétera, etcétera." Total que hice pruebas y nada. Yo personalmente he
+1:23:27
+utilizado un montonazo de técnicas desde hace años para generación de datos sintéticos y no he tenido nunca éxito
+1:23:33
+hasta ahora, pero bueno. Bien, me hace mucha gracia poner esta
+1:23:40
+esta este recorte que también lo he puesto estratégicamente porque Martí Castañ
+1:23:46
+es fundador de Quandel y gracias a su plataforma he podido hacer generar datos sintéticos de alta calidad, que para lo
+1:23:52
+que no los que no lo conozcáis eh es una es una herramienta
+1:23:58
+que te permite descargar datos de calidad para hacer las pruebas en Metatrader 4, Metatrader 5. están
+1:24:04
+limpios, están superb y también para los que trabajamos con Strategic. Así que muy bueno, la recomiendo. Y
+1:24:12
+ahora voy a explicar los retos de la creación de un framework de datos sintéticos. No sé si alguno de de los
+1:24:17
+presentes ha podido o se ha aventurado alguna vez en crear algún algoritmo de
+1:24:23
+de generación de datos sintéticos, pero bueno, he puesto los principales, que al final el primero es evitar el ruido
+1:24:28
+artificial, capturar patrones reales, mantener la coherencia estadística, evidentemente
+1:24:35
+del activo sobre el cual estás haciendo los mercados y respetar el equilibrio entre aleatoriedad y estructura. tiene
+1:24:41
+que haber un equilibrio. Al final sí que es cierto que vas a generar algo que no existe, pero tiene que que ser muy muy
+1:24:48
+fino. Y bien, ahora sí, todo esto para qué, ¿no? Lo que he explicado de de mercados
+1:24:54
+sintéticos, ¿para qué? Pues he puesto los puntos qué considero que te dan esos
+1:25:00
+mercados sintéticos eh como plus a tu a tu metodología.
+1:25:05
+El primero es que filtras por resiliencia estructural. Solo seleccionas estrategias que sobreviven a
+1:25:11
+múltiples futuros posibles, futuros barra pasados. Evitas el overfeitting temporal. Esto es
+1:25:17
+lo típico que que te estás ahorrando estrategias o estás filtrando estrategias que solo funcionan porque
+1:25:23
+los trades se han dado en un orden específico. Esto es muy muy típico. Sé que hay otras técnicas como la que ha
+1:25:29
+explicado el compañero para para evitar todo esto, pero bueno, eh los mercados
+1:25:34
+sintéticos es uno de los test que ayuda a a evitar todo esto. E el tres,
+1:25:41
+detectar fragilidad oculta. Identifica sistemas que parecen buenos, pero se rompen ante cualquier variación.
+1:25:49
+Reduces falsos positivos, así que evitas seleccionar estrategias que parecen ganados por casualidad o alineación
+1:25:55
+histórica. Simula la incertidumbre real, que esta frase me gusta mucho. El
+1:26:01
+mercado nunca repite exactamente, pero rima. aumenta la probabilidad de éxito en real, porque al final eh estamos todos
+1:26:08
+de acuerdo que si tú coges un sistema y lo estresas con un montonazo más de eventos, eh tiene muchísimas más
+1:26:15
+probabilidades de que cuando el mercado se desarrolle en la en el futuro pueda
+1:26:21
+eh funcionar mucho mejor. Y el séptimo, que para mí es el más importante y fundamental es que aumentas el tamaño de
+1:26:27
+out of sample. Eso es fundamental. Si yo tengo cinco mercados sintéticos y estoy con unos datos de hace 20 años, estamos
+1:26:36
+todos de acuerdo que estoy haciendo un back test con 120 años. Tengo 100 años
+1:26:41
+extras de auto sample. Bien, ¿qué obtenemos como resultado de todo
+1:26:48
+esto? reforzamos la antifragilidad del portafolio, ya que construimos con pie
+1:26:53
+con piezas que han sido estresadas y aún así siguen funcionando. Y luego una
+1:26:59
+frase que me gusta mucho es que es una cámara de tortura estadística para cualquier sistema.
+1:27:04
+Y bueno, he puesto aquí una frase que al final generar mercados sintéticos es como entrenar soldados de élite en
+1:27:10
+barro, lluvia y altitud extrema. No porque esas sean las condiciones reales del combate, sino porque si aprenden a
+1:27:16
+rendir bajo lo peor, teóricamente deberían de estar preparados para cualquier escenario menos hostil.
+1:27:23
+Evidentemente estamos hablando del del mercado real.
+1:27:29
+Bien, dilema y al fin EURECA. Como os he comentado anteriormente, llevo muchísimo tiempo detrás de una creación de un
+1:27:36
+framework de de generación de datos sintéticos y he utilizado muchísimas muchísimas
+1:27:44
+técnicas y ninguna me ha me ha acabado de convencer. Pero a primeros de abril de 2025 estaba
+1:27:52
+en el sofá de mi casa dándole vueltas, dejándolo en segundo plano y dije, "Pa,
+1:27:58
+es esto." y fui a la habitación, al al despacho y me puse ahí a a programar y
+1:28:04
+evidentemente me salieron datos con muchísima calidad y dije, "Vale, yo no
+1:28:09
+quería presentarme a Robot Trader sio era con algo muy innovador respecto al
+1:28:14
+año pasado, porque al final no había podido mejorar mucho la metodología respecto al año pasado.
+1:28:20
+Pero claro, el problema es que a primeros de abril empezaba Robot Trader. Ese es el motivo por el cual en esas dos
+1:28:27
+semanas estuve desarrollando el el framework, a su vez minando y bueno, y
+1:28:32
+generando todos los sistemas, los 300 sistemas que me has comentado y y por eso eh he participado dos semanas más
+1:28:39
+tarde. Y bien, ahora vamos un poco con tecnicismos, vamos con los tests de que
+1:28:47
+le he pasado al framework, escupad. Tenemos el ACF retornos
+1:28:55
+cuadrados que valida clustering de volatilidad, agrupamiento de movimientos fuertes, test de colmogorofmirnov,
+1:29:02
+este Yauma le gusta mucho a Yauma que valida similitud en la distribución de los
+1:29:08
+retornos correlación OHCL, que es la relación interna entre el open high low close. Luego tenemos la desviación
+1:29:15
+estándar que valida la volatilidad del mercado. Luego el ACF de retornos, el
+1:29:20
+normal, que es la dependencia temporal en los retornos. Y ahora vamos a ver la puntuación. He pasado muchos más tests,
+1:29:26
+pero he puesto los que considero que son más importantes. Ahora vamos a ver la puntuación que han obtenido mis datos
+1:29:32
+sintéticos en todos estos test. ACFC retornos cuadrados tenemos un uno,
+1:29:37
+por lo tanto, la interpretación es que se comporta como un mercado real. Colmgorofmirnov 098, pérdidas y
+1:29:44
+ganancias realistas. Correlación HCL 0988, velas creíbles y coherentes.
+1:29:51
+Desviación estándar 0971, riesgo similar al mercado real y ACF
+1:29:56
+retornos 0997, es decir, no es ruido aleatorio, tiene una estructura real. Y
+1:30:02
+ahora, como siempre digo, una imagen vale más que 1000 palabras. Voy a poner gráficamente cómo se ven estos estos
+1:30:10
+mercados sintéticos. En blanco tenéis el activo principal, que es el oro. Y en verde, lila y amarillo tenéis los
+1:30:19
+sintéticos. Dejo aquí un poquito para que lo podáis ver.
+1:30:24
+No sé si alguien quiere hacer alguna apreciación o algo, pero bueno, como podéis observar, eh,
+1:30:30
+se comporta, algunos sube más, otros bajan más, otro incluso acaba perdiendo, el oro acaba cotizando en 2000, cosa que
+1:30:37
+nunca pasó en 2012. Pero si os fijáis, esto es close diario, ¿vale? Si os fijáis tiene guarda el ADN del activo
+1:30:44
+principal. Los movimientos son muy muy parecidos. Esto los convierte en
+1:30:50
+mercados primos hermanos y es lo que queremos al final. Queremos unos mercados que sean muy similares al
+1:30:55
+activo principal, pero que el precio haya eh recorrido otros caminos que son
+1:31:02
+estadísticamente plausibles, cosa que es muy muy importante. Bien, pues vamos a
+1:31:08
+la parte de Show me demony, que al final que es lo que lo que todos queréis. He participado con Traitis, que quiero
+1:31:15
+eh aprovechar para agradecerles un año más mi participación con Metatrader 4.
+1:31:20
+He generado 15 sistemas, lo que me ha dado tiempo a a hacer en divisas y metales, CFDs. Sé que hay mucho
+1:31:26
+enamorado de los CFDs por aquí y están descorrelacionados.
+1:31:31
+Estas han sido las métricas de las de la cartera. He obtenido un beneficio total neto de 837,336,95,
+1:31:40
+que equivale un retorno de 83,7% con un máximo drawdown de un 4,88 en 53 trades
+1:31:48
+con un profit factor de 5,13 y un ratio de sharpe de 436.
+1:31:55
+Y como resultado final de todo lo que os he explicado, pues he obtenido la máxima rentabilidad alcanza de la historia del
+1:32:00
+campeonato, he igualado el máximo de puntos obtenido y he sido el único competidor en ganar Robot Trader dos
+1:32:06
+veces. Así que muchísimas gracias a todos por vuestra atención. Aquí tenéis mi contacto.
+1:32:17
+Muy bien. Eh, no te vayas porque seguro que te hacen alguna pregunta. Abrimos el turno de preguntas.
+1:32:26
+Abrimos el turno de preguntas para todos los participantes. Eh, ya he dejado a
+1:32:31
+Alan aquí por si queréis preguntarle algo directamente a él. Para eso va a pasar el micrófono,
+1:32:39
+eh, la zafata no pasa en otro. Así que si
+1:32:45
+alguien tiene alguna pregunta que levante la mano y pregunte. Ahí hay uno.
+1:32:52
+Te van a pasar el micrófono. Hola, Alan. Eh, yo te quería preguntar,
+1:32:59
+he visto que son 53 trades los que has hecho, ¿no? Entre los varios sistemas que componían todo el portfolio. ¿Qué
+1:33:06
+temporalidad usabas? ¿Qué qué time frame usabas? H4. H4 para todos directamente,
+1:33:12
+¿no? Sí, sí. No tuve tiempo, te digo que fue muy atropellado, no tuve tiempo en generar, normalmente me gusta combinar
+1:33:18
+la temporalidad, pero en esta ocasión no pude hacerlo. Vale, perfecto. Entiendo que es un sistema más o menos tendencial
+1:33:25
+lo que utilizabas prácticamente. No, no tiene por qué. Piensa que al final eh yo hago minería, entonces me salen
+1:33:31
+múltiples sistemas. Sí que es verdad que me gusta ver cada uno y analizar lo que hace, pero pueden ser sistemas de
+1:33:36
+breakout, pueden múltiples comportamientos. Ya, ya. O sea, que ahí combinabas realmente varias. Correcto.
+1:33:42
+Luego sí que hago sí que mido las correlaciones, mido todo, pero pero sí sí no no te podría decir que hay en
+1:33:50
+concreto un tipo de sistema. Ya. Muy bien. Pues nada, muchísimas gracias.
+1:33:58

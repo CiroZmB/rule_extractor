@@ -1,0 +1,5035 @@
+﻿//+------------------------------------------------------------------+
+//|                       OneR_MonkeyTrader_FromCSV.mq5              |
+//|    Entrena OneR (feature,bin) desde CSV + Monkey Test + Trading  |
+//+------------------------------------------------------------------+
+#property strict
+#property version   "10.00"
+#property copyright "Copyright 2025, Enrique Enguix"
+
+#include <Trade\Trade.mqh>
+#include <Trade\PositionInfo.mqh>
+
+#property description "OneR_MonkeyTrader_FromCSV: fábrica de reglas sobre CSV OHLC+features."
+#property description "1) Carga el CSV y calcula un target configurable (Open/Close, IBS, N días)."
+#property description "2) Construye índice entrenable, aplica rango de fechas y split Train/Test."
+#property description "3) Extrae reglas OneR y combos AND, exige mínimos de trades por bin/combo."
+#property description "4) Aplica filtros de robustez: Monkey Test, mundos sintéticos y Sharpe."
+#property description "5) Selecciona reglas finales diversas y opera en nueva vela (ONE_BAR/PERSISTENT)."
+
+//-------------------------------------------------------------------
+// (A) ENUMS / MODOS (ordenados por uso en el pipeline)
+//-------------------------------------------------------------------
+
+//--- Esquema de partición temporal Train / Test
+// Nota: qué tramo es Train/Test se decide en ENUM_TRAIN_TEST_MODE.
+enum ENUM_TRAIN_TEST_SPLIT
+  {
+   SPLIT_90_10 = 0,    // 90% Train  / 10% Test
+   SPLIT_80_20 = 1,    // 80% Train  / 20% Test
+   SPLIT_70_30 = 2,    // 70% Train  / 30% Test
+   SPLIT_60_40 = 3,    // 60% Train  / 40% Test
+   SPLIT_50_50 = 4,    // 50% Train  / 50% Test
+   SPLIT_40_60 = 5,    // 40% Train  / 60% Test
+   SPLIT_30_70 = 6,    // 30% Train  / 70% Test
+   SPLIT_20_80 = 7,    // 20% Train  / 80% Test
+   SPLIT_10_90 = 8     // 10% Train  / 90% Test
+  };
+
+//--- Modo temporal del split:
+//  - CLASSIC: Train = más antiguo, Test = más reciente.
+//  - INVERTED: Train = más reciente, Test = más antiguo.
+enum ENUM_TRAIN_TEST_MODE
+  {
+   TRAIN_TEST_CLASSIC  = 0,   // Clásico: Train antiguo, Test reciente
+   TRAIN_TEST_INVERTED = 1    // Invertido: Train reciente, Test antiguo
+  };
+
+//--- Modo de cálculo del target
+enum ENUM_TARGET_MODE
+  {
+   TARGET_OPEN_RET_1BAR   = 0, // (Open[t+1]-Open[t]) / Open[t]
+   TARGET_CLOSE_RET_1BAR  = 1, // (Close[t+1]-Close[t]) / Close[t]
+   TARGET_RET_X_IBS_NEXT  = 2, // Retorno 1-barra (Close) × IBS de la vela siguiente
+   TARGET_RET_X_IBS_EXT_N = 3  // Retorno N-barras (Close) × IBS extendido [t+1..t+N]
+  };
+
+//--- Modo de ejecución de las reglas
+enum ENUM_TRADE_EXECUTION_MODE
+  {
+   TRADE_MODE_PERSISTENT = 0,   // Mantener posición mientras haya reglas a favor
+   TRADE_MODE_ONE_BAR    = 1,   // Trade abre en esta vela y cierra en la siguiente
+   TRADE_MODE_VOTING  = 2    // Metaregla: operar solo con mayoría clara de votos
+  };
+
+//--- (Hueco reservado, NO expuesto como input del Monkey Test)
+//    Mantengo el enum con 2 valores como pediste, pero SuperMonkey es una ETAPA aparte.
+enum ENUM_MONKEY_MODE
+  {
+   MONKEY_CIRCULAR_SHIFT = 0,
+   MONKEY_SUPERMONKEY    = 1   // reservado (no usar aquí)
+  };
+
+//------------------------------
+// Modo de familia de reglas: Univariables vs Multivariables
+//------------------------------
+enum ENUM_RULE_FAMILY_MODE
+  {
+   RULE_FAMILY_UNIVARIATE_ONLY       = 0,  // Solo reglas univariantes (OneR)
+   RULE_FAMILY_BIVARIATE_COMBOS_ONLY = 1   // Solo combos AND 2-a-2 (sin univariantes)
+  };
+
+
+//+------------------------------------------------------------------+
+//| (B) INPUTS: Pipeline en orden real de ejecución                  |
+//+------------------------------------------------------------------+
+
+//--- 1) LOAD - Carga de datos (CSV + rango de fechas)
+input group "LOAD - Carga de Datos";
+input string   InpInfoLoad1      = "[i] CSV con OHLC + features (DataExtractor).";
+input string   InpInfoLoad2      = "[i] Formato: Date,Open,High,Low,Close,...features.";
+input string   InpInfoLoad3      = "[i] El rango de fechas limita el histórico usado.";
+input string   InpCsvFileName    = "EURUSD_D1_2014.01.01_2024.12.31.csv"; // Nombre del CSV
+input datetime InpTrainStartDate = D'2018.01.01 00:00';                   // Primera fecha a usar
+input datetime InpTrainEndDate   = D'2024.12.31 23:59';                   // Última fecha a usar
+
+//--- 2) TARGET - Objetivo
+input group "TARGET - Objetivo";
+input string InpInfoTarget1 =
+   "[i] Modo de objetivo (retorno por barra):";
+input string InpInfoTarget2 =
+   "[i] 0: (Open[t+1]-Open[t]) / Open[t]";
+input string InpInfoTarget3 =
+   "[i] 1: (Close[t+1]-Close[t]) / Close[t]";
+input string InpInfoTarget4 =
+   "[i] 2: retorno 1-barra × IBS de la barra siguiente.";
+input string InpInfoTarget5 =
+   "[i] 3: retorno N-barras × IBS extendido [t+1..t+N].";
+input ENUM_TARGET_MODE InpTargetMode      = TARGET_RET_X_IBS_NEXT;
+input int              InpTargetDaysAhead = 3;   // N días hacia delante para modo 3
+
+//--- 3) SPLIT - Partición temporal Train/Test
+input group "SPLIT - Partición Train/Test";
+input string InpInfoSplit1 = "[i] Divide el histórico en tramo Train y Test.";
+input string InpInfoSplit2 = "[i] CLASSIC: Train antiguo, Test reciente.";
+input string InpInfoSplit3 = "[i] INVERTED: Train reciente, Test antiguo.";
+input ENUM_TRAIN_TEST_SPLIT InpTrainTestSplit = SPLIT_30_70;         // Proporción Train/Test
+input ENUM_TRAIN_TEST_MODE  InpTrainTestMode  = TRAIN_TEST_INVERTED; // Distribución del Split
+
+//--- 4) EXTRACTION - OneR base (reglas univariantes)
+input group "EXTRACTION - OneR base";
+input string InpInfoExtraction1 = "[i] OneR: hasta 2 reglas por feature.";
+input string InpInfoExtraction2 = "[i] Máximo 1 LONG y 1 SHORT por feature.";
+input string InpInfoExtraction3 = "[i] Se exige retorno > 0 en Train y en Test.";
+input string InpInfoExtraction4 = "[i] Binning tipo qcut con InpNumBins bins.";
+input int    InpNumBins         = 4;    // Nº de bins (qcut)
+input int    InpMinTradesPerBin = 100;  // Mínimo de trades por bin
+
+//------------------------------
+// 4.bis) Familia de reglas (univariables vs multivariables)
+//------------------------------
+input group "RULE FAMILY - Univariables vs Multivariables";
+input string InpInfoRuleFamily1 = "[i] UNIVARIATE_ONLY: solo OneR (1 feature).";
+input string InpInfoRuleFamily2 = "[i] UNIVARIATE+COMBOS: como ahora (OneR + AND 2-a-2).";
+input ENUM_RULE_FAMILY_MODE InpRuleFamilyMode = RULE_FAMILY_BIVARIATE_COMBOS_ONLY;
+
+
+//--- 5) COMBOS - Reglas AND 2-a-2 (después de OneR base)
+input group "COMBOS - Reglas AND 2-a-2";
+input string InpInfoCombos1 = "[i] A partir de reglas univariantes válidas";
+input string InpInfoCombos2 = "[i] se crean combos AND de 2 reglas del mismo lado.";
+input bool InpFilterCombosByMinTrades = true;   // Filtrar combos por nº mínimo de trades
+input int  InpMinTradesPerCombo       = 100;    // Mínimo trades totales (Train+Test) por combo
+input bool InpVerboseComboLogs        = false;  // Log detalle combos aceptados/descartados
+
+
+//--- 7) VALIDATION - Monkey Test (SOLO Monkey normal per-regla)
+input group "VALIDATION - Monkey Test (en el futuro: Luck Filter)";
+input string InpInfoMonkey1 = "[i] Compara cada regla con muchos 'monos' aleatorios.";
+input string InpInfoMonkey2 = "[i] Usa solo la cola temporal de sus trades (datasetFraction).";
+input string InpInfoMonkey3 = "[i] Filtra reglas que no superan a los monos (percentil).";
+input bool   InpUseMonkeyFilter       = true;    // Activar filtro Monkey
+input bool   InpVerboseMonkeyLogs     = false;   // Log detalle por regla
+input int    InpNumMonkeys            = 1000;    // Nº de monos simulados
+input uint   InpMonkeySeed            = 123456;  // Semilla RNG monos
+input double InpMonkeyPercentile      = 0.95;     // Percentil mínimo para aceptar (1 - α)
+input double InpMonkeyDatasetFraction = 0.33;     // Fracción final del dataset usada (0–1)
+
+//--- 8) ENSEMBLE - Ranking Sharpe (se ejecuta antes del sintético)
+input group "ENSEMBLE - Ranking Sharpe";
+input string InpInfoEnsemble1 = "[i] Sharpe multi-ventana para ordenar reglas.";
+input bool   InpUseSharpeFilter  = true;   // Usar Sharpe multi-ventana para ordenar
+input int    InpSharpeNumWindows = 10;     // Nº de ventanas para medir estabilidad
+
+//--- 9) SYNTHETIC - Filtro sintético (después de Monkey + Sharpe ranking)
+input group "SYNTHETIC - Filtro sintético";
+input string InpInfoSynthetic1 = "[i] Crea 'mundos sintéticos' de retornos por bootstrap.";
+input string InpInfoSynthetic2 = "[i] Compara KS, ACF(retornos) y ACF(retornos²).";
+input bool   InpUseSyntheticFilter   = true;    // Activar filtro sintético
+input bool   InpVerboseSyntheticLogs = false;   // Log detalle mundos/intentos/medias
+input int    InpNumSyntheticWorlds   = 5;       // Mundos sintéticos por regla
+input uint   InpSyntheticSeed        = 987654;  // Semilla RNG sintético
+input int    InpMaxSynthAttempts     = 10;      // Reintentos por mundo
+input double InpSynthKeepPercentage  = 0.9;     // % retornos originales conservados
+input int    InpACFMaxLagSynth       = 20;      // Lag máximo para comparar estructura temporal
+input double InpMinKSSim             = 0.9;     // Similitud mínima KS
+input double InpMinACFSim            = 0.8;     // Similitud mínima ACF retornos
+input double InpMinACFSqSim          = 0.8;     // Similitud mínima ACF retornos²
+input double InpMaxDeviationRatio    = 0.15;    // Desviación máx media sintética vs real
+
+//--- 10) ENSEMBLE - MinScore y recorte K (se aplica tras sintético)
+input group "ENSEMBLE - MinScore / Recorte";
+input string InpInfoEnsemble2 = "[i] MinScore (SharpeScore) y límite de K reglas finales.";
+input int    InpNumRulesToSelect = 10;  // Nº máx. de reglas finales (0 = sin recorte)
+input double InpMinRuleScore     = 0;   // Score mínimo (0 = sin filtro)
+
+
+//--- 6) VALIDATION - LuckFilter (ETAPA GLOBAL, se ejecuta DESPUÉS del sintético y ANTES de Jaccard)
+input group "VALIDATION - LuckFilter";
+input string InpInfoLuck1 = "[i] LuckFilter: valida el pipeline completo vs mundos nulos (shift del target).";
+input string InpInfoLuck2 = "[i] Se ejecuta tras mundos sintéticos.";
+input bool   InpUseLuckFilter        = false;   // Activar LuckFilter
+input int    InpLuckFilterWorlds     = 10;      // Nº mundos nulos
+input uint   InpLuckFilterSeed       = 222222;  // Semilla RNG LuckFilter
+input double InpLuckFilterPercentile = 0.8;     // Umbral/percentil
+input bool   InpLuckFilterSilent     = true;    // Evita spam de stats (NO evita prints internos del pipeline)
+
+
+//--- 11) DIVERSITY - Solapamiento entre reglas (Jaccard)
+input group "DIVERSITY - Diversidad (Jaccard)";
+input string InpInfoDiversity1 = "[i] Evita reglas que disparan en las mismas barras.";
+input bool   InpUseJaccardFilter    = true; // Activar filtro de solapamiento
+input double InpMaxJaccardSameSide  = 0.33; // Máx. solapamiento permitido
+
+//--- 12) TRADING - Ejecución en mercado (última etapa)
+input group "TRADING - Ejecución en mercado";
+input string InpInfoTrading1 = "[i] ONE_BAR: abre en esta vela y cierra en la siguiente.";
+input string InpInfoTrading2 = "[i] PERSISTENT: mantiene mientras haya reglas a favor.";
+input string InpInfoTrading3 = "[i] VOTING: usa voto agregado de reglas.";
+input ENUM_TRADE_EXECUTION_MODE InpExecMode = TRADE_MODE_PERSISTENT; // Modo de ejecución
+input double                  InpLots      = 0.10;                    // Lote
+input int                     InpMagic     = 777777;                  // Magic
+
+//--- META-RULE - Parámetros de voto agregado
+input string InpInfoMetaRule1 = "Parámetros inferiores son solo para MetaRegla";
+input int    InpMetaMinAbsVotes  = 3;  // mínimo reglas activas en lado ganador
+input int    InpMetaMinDiffVotes = 1;  // diferencia mínima |LONG-SHORT|
+
+
+
+//-------------------------------------------------------------------
+// Datos cargados del CSV
+//-------------------------------------------------------------------
+datetime g_time[];
+double   g_open[];
+double   g_close[];
+double   g_high[];
+double   g_low[];
+double   g_target[];    // target
+double   g_features[];  // matriz plana [row * g_numFeatures + f]
+string   g_featureNames[];
+int      g_rows        = 0;
+int      g_numFeatures = 0;
+
+// Índices de filas con Target válido
+int      g_trainIndex[];
+int      g_numTrainable = 0;
+
+// Indicador de si el CSV trae columnas High/Low
+bool     g_hasHighLow = false;
+
+
+//-------------------------------------------------------------------
+// Estructura de regla OneR (feature+bin) o combinación AND de 2 reglas
+//-------------------------------------------------------------------
+struct RuleInfo
+  {
+   int               featureIndex;      // índice de feature (regla 1)
+   int               binIndex;          // índice de bin (regla 1)
+   int               side;              // +1 LONG, -1 SHORT
+   double            meanRet;           // rendimiento medio signado (magnitud positiva)
+   int               numTrades;         // nº de trades totales de la regla
+   double            binLow;            // límite inferior del bin (regla 1)
+   double            binHigh;           // límite superior del bin (regla 1)
+
+   // Monkey Test
+   double            monkeyQuantile;    // cuantíl de monos
+   double            monkeyPValue;      // p-valor (monos >= regla)
+
+   // Runtime
+   int               indicatorHandle;   // handle del indicador en tiempo real (regla 1)
+
+   // --- NUEVO: campos para combinaciones AND de 2 reglas univariantes ---
+   bool              isCombo;           // false = univariante, true = combinación AND
+   int               featureIndex2;     // índice de feature (regla 2, si combo)
+   int               binIndex2;         // índice de bin (regla 2)
+   double            binLow2;           // límites del bin (regla 2)
+   double            binHigh2;
+   int               indicatorHandle2;  // handle del segundo indicador en tiempo real
+  };
+
+RuleInfo g_rules[];          // top-K reglas seleccionadas
+
+// Helper para describir una regla (univariante o combo) en logs
+string DescribeRuleShort(const RuleInfo &rule)
+  {
+   string sideStr = (rule.side > 0 ? "LONG" : (rule.side < 0 ? "SHORT" : "FLAT"));
+
+   if(!rule.isCombo)
+     {
+      return(StringFormat("[UNIV] Feature=%s | Bin %d [%.6f, %.6f] | side=%s",
+                          g_featureNames[rule.featureIndex],
+                          rule.binIndex,
+                          rule.binLow, rule.binHigh,
+                          sideStr));
+     }
+
+   return(StringFormat("[COMBO] (%s Bin %d [%.6f, %.6f]) AND (%s Bin %d [%.6f, %.6f]) | side=%s",
+                       g_featureNames[rule.featureIndex],
+                       rule.binIndex,
+                       rule.binLow, rule.binHigh,
+                       g_featureNames[rule.featureIndex2],
+                       rule.binIndex2,
+                       rule.binLow2, rule.binHigh2,
+                       sideStr));
+  }
+
+
+struct HandleCacheItem
+  {
+   string            key;     // clave única: Symbol|TF|Family|Period
+   int               handle;  // handle MT5
+  };
+
+HandleCacheItem g_handleCache[];
+
+// Construye una key estable para el cache
+string MakeHandleKey(const string family, const int period)
+  {
+   return(_Symbol + "|" + IntegerToString((int)Period()) + "|" + family + "|" + IntegerToString(period));
+  }
+
+// Busca en cache y devuelve índice, o -1 si no existe
+int FindHandleInCache(const string key)
+  {
+   int n = ArraySize(g_handleCache);
+   for(int i=0; i<n; i++)
+     {
+      if(g_handleCache[i].key == key)
+         return(i);
+     }
+   return(-1);
+  }
+
+// Devuelve handle existente o crea uno nuevo y lo cachea
+int GetOrCreateHandleCached(const string family, const int period)
+  {
+   string key = MakeHandleKey(family, period);
+
+   int idx = FindHandleInCache(key);
+   if(idx >= 0)
+      return(g_handleCache[idx].handle);
+
+   int h = CreateHandleForFeatureFallback(family, period);
+   if(h == INVALID_HANDLE)
+      return(INVALID_HANDLE);
+
+   int n = ArraySize(g_handleCache);
+   ArrayResize(g_handleCache, n+1);
+   g_handleCache[n].key    = key;
+   g_handleCache[n].handle = h;
+
+   return(h);
+  }
+
+// Libera TODOS los handles del cache (ownership centralizado aquí)
+void ReleaseAllCachedHandles()
+  {
+   int n = ArraySize(g_handleCache);
+   for(int i=0; i<n; i++)
+     {
+      if(g_handleCache[i].handle != INVALID_HANDLE)
+         IndicatorRelease(g_handleCache[i].handle);
+     }
+   ArrayResize(g_handleCache, 0);
+  }
+
+
+
+//-------------------------------------------------------------------
+// Trading runtime
+//-------------------------------------------------------------------
+CTrade   trade;
+CPositionInfo position;
+datetime g_lastBarTime = 0;
+
+//-------------------------------------------------------------------
+// Utilidades de strings / CSV
+//-------------------------------------------------------------------
+
+// Trim sencillo (espacios y \r\n)
+void TrimInPlace(string &s)
+  {
+   int len = StringLen(s);
+   if(len <= 0)
+      return;
+
+// izquierda
+   int start = 0;
+   while(start < len)
+     {
+      string ch = StringSubstr(s, start, 1);
+      if(ch == " " || ch == "\t" || ch == "\r" || ch == "\n")
+         start++;
+      else
+         break;
+     }
+
+// derecha
+   int end = len - 1;
+   while(end >= start)
+     {
+      string ch = StringSubstr(s, end, 1);
+      if(ch == " " || ch == "\t" || ch == "\r" || ch == "\n")
+         end--;
+      else
+         break;
+     }
+
+   if(end < start)
+     {
+      s = "";
+      return;
+     }
+
+   s = StringSubstr(s, start, end - start + 1);
+  }
+
+// Split CSV simple por comas, sin comillas escapadas
+void SplitCSVLine(const string line, string &columns[])
+  {
+   ArrayResize(columns, 0);
+   int len = StringLen(line);
+   if(len <= 0)
+      return;
+
+   int start = 0;
+   while(start <= len)
+     {
+      int commaPos = StringFind(line, ",", start);
+      string token;
+      if(commaPos < 0)
+        {
+         token = StringSubstr(line, start);
+         start = len + 1; // salir
+        }
+      else
+        {
+         token = StringSubstr(line, start, commaPos - start);
+         start = commaPos + 1;
+        }
+
+      TrimInPlace(token);
+      int idx = ArraySize(columns);
+      ArrayResize(columns, idx + 1);
+      columns[idx] = token;
+     }
+  }
+
+//-------------------------------------------------------------------
+// Carga del CSV generado por DataExtractor_v3
+//-------------------------------------------------------------------
+bool LoadCSV(const string file_name)
+  {
+// Reset del flag High/Low
+   g_hasHighLow = false;
+
+// 1) Intento en Common\Files (compartido entre terminal y tester)
+   ResetLastError();
+   int fh = FileOpen(file_name, FILE_READ | FILE_ANSI | FILE_COMMON | FILE_SHARE_READ);
+   int err_common = GetLastError();
+
+   if(fh == INVALID_HANDLE)
+     {
+      PrintFormat("WARNING: no se pudo abrir '%s' en Common\\Files (FILE_COMMON). Err=%d",
+                  file_name, err_common);
+
+      // 2) Intento en MQL5\Files local
+      ResetLastError();
+      fh = FileOpen(file_name, FILE_READ | FILE_ANSI | FILE_SHARE_READ);
+      int err_local = GetLastError();
+
+      if(fh == INVALID_HANDLE)
+        {
+         PrintFormat("ERROR: no se pudo abrir '%s' ni en Common\\Files ni en MQL5\\Files. ErrCommon=%d ErrLocal=%d",
+                     file_name, err_common, err_local);
+         return(false);
+        }
+      else
+        {
+         PrintFormat("INFO: archivo '%s' abierto desde MQL5\\Files (no desde Common\\Files).", file_name);
+        }
+     }
+   else
+     {
+      PrintFormat("INFO: archivo '%s' abierto correctamente desde Common\\Files.", file_name);
+     }
+
+// ¿Archivo vacío?
+   if(FileIsEnding(fh))
+     {
+      Print("ERROR: archivo vacío.");
+      FileClose(fh);
+      return(false);
+     }
+
+// Leer cabecera
+   string header_line = FileReadString(fh);
+   string header_cols[];
+   SplitCSVLine(header_line, header_cols);
+
+   int nCols = ArraySize(header_cols);
+   if(nCols < 6)
+     {
+      Print("ERROR: cabecera inesperada (menos de 6 columnas). Se espera al menos Date,Open,High,Low,Close,+1 feature.");
+      FileClose(fh);
+      return(false);
+     }
+
+   int idxDate  = -1;
+   int idxOpen  = -1;
+   int idxHigh  = -1;
+   int idxLow   = -1;
+   int idxClose = -1;
+
+   for(int i=0; i<nCols; i++)
+     {
+      if(header_cols[i] == "Date")
+         idxDate  = i;
+      if(header_cols[i] == "Open")
+         idxOpen  = i;
+      if(header_cols[i] == "High")
+         idxHigh  = i;
+      if(header_cols[i] == "Low")
+         idxLow   = i;
+      if(header_cols[i] == "Close")
+         idxClose = i;
+     }
+
+   if(idxOpen < 0 || idxClose < 0)
+     {
+      Print("ERROR: no se encontraron columnas 'Open'/'Close' en la cabecera.");
+      FileClose(fh);
+      return(false);
+     }
+
+// High/Low opcionales, pero necesarios para modos de target basados en IBS
+   if(idxHigh < 0 || idxLow < 0)
+     {
+      Print("WARNING: no se encontraron columnas 'High'/'Low' en la cabecera. Targets basados en IBS no estarán disponibles.");
+      g_hasHighLow = false;
+     }
+   else
+     {
+      g_hasHighLow = true;
+     }
+
+// Features = todo lo que va después de Close
+// DataExtractor escribe: Date,Open,High,Low,Close,...features
+   int firstFeatureCol = idxClose + 1;
+   if(firstFeatureCol >= nCols)
+     {
+      Print("ERROR: no hay columnas de features en el CSV (solo OHLC).");
+      FileClose(fh);
+      return(false);
+     }
+
+   g_numFeatures = nCols - firstFeatureCol;
+   ArrayResize(g_featureNames, g_numFeatures);
+   for(int f=0; f<g_numFeatures; f++)
+      g_featureNames[f] = header_cols[firstFeatureCol + f];
+
+// Leer todas las filas de datos en memoria temporal
+   string lines[];
+   ArrayResize(lines, 0);
+
+   while(!FileIsEnding(fh))
+     {
+      string line = FileReadString(fh);
+      if(StringLen(line) == 0)
+         continue;
+
+      int pos = ArraySize(lines);
+      ArrayResize(lines, pos + 1);
+      lines[pos] = line;
+     }
+
+   FileClose(fh);
+
+   g_rows = ArraySize(lines);
+   if(g_rows <= 0)
+     {
+      Print("ERROR: no se encontraron filas de datos en el CSV.");
+      return(false);
+     }
+
+// Reservar arrays
+   ArrayResize(g_time,     g_rows);
+   ArrayResize(g_open,     g_rows);
+   ArrayResize(g_close,    g_rows);
+   ArrayResize(g_high,     g_rows);   // NUEVO
+   ArrayResize(g_low,      g_rows);   // NUEVO
+   ArrayResize(g_target,   g_rows);
+   ArrayResize(g_features, g_rows * g_numFeatures);
+
+// Parseo fila a fila
+   for(int r=0; r<g_rows; r++)
+     {
+      string cols[];
+      SplitCSVLine(lines[r], cols);
+      int cCount = ArraySize(cols);
+
+      if(cCount < nCols)
+        {
+         PrintFormat("WARNING: fila %d con menos columnas de las esperadas (%d < %d). Se rellenan con vacíos.",
+                     r, cCount, nCols);
+         ArrayResize(cols, nCols);
+        }
+
+      // Fecha (si existe)
+      if(idxDate >= 0 && idxDate < ArraySize(cols))
+         g_time[r] = StringToTime(cols[idxDate]);
+      else
+         g_time[r] = 0;
+
+      // Open / Close
+      if(idxOpen >= 0 && idxOpen < ArraySize(cols))
+         g_open[r] = StringToDouble(cols[idxOpen]);
+      else
+         g_open[r] = EMPTY_VALUE;
+
+      if(idxClose >= 0 && idxClose < ArraySize(cols))
+         g_close[r] = StringToDouble(cols[idxClose]);
+      else
+         g_close[r] = EMPTY_VALUE;
+
+      // High / Low
+      if(g_hasHighLow)
+        {
+         if(idxHigh >= 0 && idxHigh < ArraySize(cols))
+            g_high[r] = StringToDouble(cols[idxHigh]);
+         else
+            g_high[r] = EMPTY_VALUE;
+
+         if(idxLow >= 0 && idxLow < ArraySize(cols))
+            g_low[r] = StringToDouble(cols[idxLow]);
+         else
+            g_low[r] = EMPTY_VALUE;
+        }
+      else
+        {
+         g_high[r] = EMPTY_VALUE;
+         g_low[r]  = EMPTY_VALUE;
+        }
+
+      // Features
+      for(int f=0; f<g_numFeatures; f++)
+        {
+         int colIndex = firstFeatureCol + f;
+         double v = EMPTY_VALUE;
+         if(colIndex < ArraySize(cols))
+           {
+            string s = cols[colIndex];
+            if(StringLen(s) > 0)
+               v = StringToDouble(s);
+           }
+         g_features[r * g_numFeatures + f] = v;
+        }
+     }
+
+   PrintFormat("CSV cargado: filas=%d, features=%d, HighLow=%s",
+               g_rows, g_numFeatures,
+               (g_hasHighLow ? "SI" : "NO"));
+
+   return(true);
+  }
+
+
+//-------------------------------------------------------------------
+// ComputeTarget: calcula g_target[] según InpTargetMode
+//-------------------------------------------------------------------
+bool ComputeTarget()
+  {
+   if(g_rows < 2)
+     {
+      Print("ComputeTarget: filas insuficientes.");
+      return(false);
+     }
+
+// Inicializar todo a EMPTY_VALUE
+   for(int i=0; i<g_rows; i++)
+      g_target[i] = EMPTY_VALUE;
+
+// ¿Este modo necesita High/Low?
+   bool needHighLow =
+      (InpTargetMode == TARGET_RET_X_IBS_NEXT ||
+       InpTargetMode == TARGET_RET_X_IBS_EXT_N);
+
+   if(needHighLow && !g_hasHighLow)
+     {
+      Print("ComputeTarget: el modo de target seleccionado requiere columnas High/Low en el CSV.");
+      return(false);
+     }
+
+   if(InpTargetMode == TARGET_RET_X_IBS_EXT_N && InpTargetDaysAhead < 1)
+     {
+      Print("ComputeTarget: InpTargetDaysAhead debe ser >= 1 para TARGET_RET_X_IBS_EXT_N.");
+      return(false);
+     }
+
+   int lastTrainable = -1;
+
+   for(int i=0; i<g_rows; i++)
+     {
+      double tgt = EMPTY_VALUE;
+
+      switch(InpTargetMode)
+        {
+         //----------------------------------------------------------------
+         // 0) Modo original: (Open[t+1]-Open[t]) / Open[t]
+         //----------------------------------------------------------------
+         case TARGET_OPEN_RET_1BAR:
+           {
+            int j = i + 1;
+            if(j < g_rows)
+              {
+               double o1 = g_open[i];
+               double o2 = g_open[j];
+
+               if(MathIsValidNumber(o1) && MathIsValidNumber(o2) && o1 != 0.0)
+                  tgt = (o2 - o1) / o1;
+              }
+           }
+         break;
+
+         //----------------------------------------------------------------
+         // 1) Retorno 1-barra con Close
+         //    target = (Close[t+1]-Close[t]) / Close[t]
+         //----------------------------------------------------------------
+         case TARGET_CLOSE_RET_1BAR:
+           {
+            int j = i + 1;
+            if(j < g_rows)
+              {
+               double c1 = g_close[i];
+               double c2 = g_close[j];
+
+               if(MathIsValidNumber(c1) && MathIsValidNumber(c2) && c1 != 0.0)
+                  tgt = (c2 - c1) / c1;
+              }
+           }
+         break;
+
+         //----------------------------------------------------------------
+         // 2) Retorno 1-barra (Close) × IBS de la vela siguiente
+         //
+         // IBS_next = (Close[t+1] - Low[t+1]) / (High[t+1] - Low[t+1])
+         // target   = ret * IBS_next          si ret >= 0
+         //          = ret * (1 - IBS_next)    si ret < 0
+         //----------------------------------------------------------------
+         case TARGET_RET_X_IBS_NEXT:
+           {
+            int j = i + 1;
+            if(j < g_rows)
+              {
+               double c1 = g_close[i];
+               double c2 = g_close[j];
+               double h1 = g_high[j];
+               double l1 = g_low[j];
+
+               if(MathIsValidNumber(c1) && MathIsValidNumber(c2) &&
+                  MathIsValidNumber(h1) && MathIsValidNumber(l1) &&
+                  c1 != 0.0)
+                 {
+                  double ret = (c2 - c1) / c1;
+
+                  double denom = h1 - l1;
+                  double ibs_next;
+                  if(denom <= 0.0 || !MathIsValidNumber(denom))
+                     ibs_next = 0.5;
+                  else
+                     ibs_next = (c2 - l1) / denom; // IBS de la vela j
+
+                  if(ibs_next < 0.0)
+                     ibs_next = 0.0;
+                  if(ibs_next > 1.0)
+                     ibs_next = 1.0;
+
+                  if(ret >= 0.0)
+                     tgt = ret * ibs_next;
+                  else
+                     tgt = ret * (1.0 - ibs_next);
+                 }
+              }
+           }
+         break;
+
+         //----------------------------------------------------------------
+         // 3) Retorno N-barras (Close) × IBS extendido en [t+1..t+N]
+         //
+         // Período   = barras i+1 .. i+N
+         // Close_0   = Close[i]
+         // Close_N   = Close[i+N]
+         // High_max  = max(High[i+1..i+N])
+         // Low_min   = min(Low[i+1..i+N])
+         //
+         // IBS_ext   = (Close_N - Low_min) / (High_max - Low_min)
+         // target    = ret * IBS_ext        si ret >= 0
+         //           = ret * (1 - IBS_ext)  si ret < 0
+         //----------------------------------------------------------------
+         case TARGET_RET_X_IBS_EXT_N:
+           {
+            int N       = InpTargetDaysAhead;
+            int endIdx  = i + N;
+            int startIdx= i + 1;
+
+            if(N >= 1 && endIdx < g_rows)
+              {
+               double c0 = g_close[i];
+               double cN = g_close[endIdx];
+
+               if(MathIsValidNumber(c0) && MathIsValidNumber(cN) && c0 != 0.0)
+                 {
+                  double ret = (cN - c0) / c0;
+
+                  // High/Low del período [startIdx .. endIdx]
+                  double maxHigh = g_high[startIdx];
+                  double minLow  = g_low[startIdx];
+
+                  bool okHL = MathIsValidNumber(maxHigh) && MathIsValidNumber(minLow);
+
+                  for(int k=startIdx + 1; okHL && k <= endIdx; k++)
+                    {
+                     double hk = g_high[k];
+                     double lk = g_low[k];
+
+                     if(!MathIsValidNumber(hk) || !MathIsValidNumber(lk))
+                       {
+                        okHL = false;
+                        break;
+                       }
+
+                     if(hk > maxHigh)
+                        maxHigh = hk;
+                     if(lk < minLow)
+                        minLow  = lk;
+                    }
+
+                  if(okHL)
+                    {
+                     double denom  = maxHigh - minLow;
+                     double ibsExt = 0.5;
+
+                     if(denom > 0.0 && MathIsValidNumber(denom))
+                       {
+                        ibsExt = (cN - minLow) / denom;
+                        if(ibsExt < 0.0)
+                           ibsExt = 0.0;
+                        if(ibsExt > 1.0)
+                           ibsExt = 1.0;
+                       }
+
+                     if(ret >= 0.0)
+                        tgt = ret * ibsExt;
+                     else
+                        tgt = ret * (1.0 - ibsExt);
+                    }
+                 }
+              }
+           }
+         break;
+        } // switch(InpTargetMode)
+
+      if(tgt == EMPTY_VALUE || !MathIsValidNumber(tgt))
+        {
+         g_target[i] = EMPTY_VALUE;
+        }
+      else
+        {
+         g_target[i] = tgt;
+         lastTrainable = i;
+        }
+     }
+
+   if(lastTrainable < 0)
+     {
+      Print("ComputeTarget: no se pudo calcular ningún target válido.");
+      return(false);
+     }
+
+   PrintFormat("ComputeTarget: último índice con target válido = %d (de %d filas). Modo=%d, daysAhead=%d",
+               lastTrainable, g_rows - 1, InpTargetMode, InpTargetDaysAhead);
+   return(true);
+  }
+
+
+//-------------------------------------------------------------------
+// Construye índice de filas con Target válido
+// Alineado con ONE_BAR: feature[row] → retorno g_target[row+1]
+// Aplica filtro de fechas opcional sobre la fecha de la barra del target
+//-------------------------------------------------------------------
+int BuildTrainableIndex()
+  {
+   ArrayResize(g_trainIndex, 0);
+
+// Normalizar rango de fechas
+   datetime start = InpTrainStartDate;
+   datetime end   = InpTrainEndDate;
+
+   if(start != 0 && end != 0 && start > end)
+     {
+      datetime tmp = start;
+      start = end;
+      end   = tmp;
+      PrintFormat("BuildTrainableIndex: start > end → se intercambian. Nuevo rango: [%s, %s]",
+                  TimeToString(start, TIME_DATE),
+                  TimeToString(end,   TIME_DATE));
+     }
+
+   bool useDateFilter = (start != 0 || end != 0);
+
+   int       used     = 0;
+   datetime  minUsed  = 0;
+   datetime  maxUsed  = 0;
+
+// Podemos usar filas 0..g_rows-3 como "feature rows",
+// porque su target asociado será g_target[row+1] (hasta g_rows-2)
+   for(int row=0; row<g_rows-2; row++)
+     {
+      int rowTarget = row + 1;
+      double t      = g_target[rowTarget];
+
+      if(t == EMPTY_VALUE || !MathIsValidNumber(t))
+         continue;
+
+      if(useDateFilter)
+        {
+         datetime dt = g_time[rowTarget]; // fecha de la barra del target
+
+         // Si no hay fecha válida y se pide filtro por fechas → descartamos
+         if(dt == 0)
+            continue;
+
+         if(start != 0 && dt < start)
+            continue;
+         if(end   != 0 && dt > end)
+            continue;
+
+         if(used == 0 || dt < minUsed)
+            minUsed = dt;
+         if(used == 0 || dt > maxUsed)
+            maxUsed = dt;
+        }
+
+      int pos = ArraySize(g_trainIndex);
+      ArrayResize(g_trainIndex, pos + 1);
+      g_trainIndex[pos] = row;   // fila de FEATURES (no la del target)
+      used++;
+     }
+
+   g_numTrainable = ArraySize(g_trainIndex);
+
+   if(useDateFilter)
+     {
+      if(g_numTrainable > 0)
+        {
+         PrintFormat("BuildTrainableIndex: filas entrenables ONE_BAR = %d en rango [%s, %s]",
+                     g_numTrainable,
+                     TimeToString(minUsed, TIME_DATE),
+                     TimeToString(maxUsed, TIME_DATE));
+        }
+      else
+        {
+         PrintFormat("BuildTrainableIndex: 0 filas entrenables en rango solicitado [%s, %s].",
+                     (start != 0 ? TimeToString(start, TIME_DATE) : "SIN_LIMITE_INF"),
+                     (end   != 0 ? TimeToString(end,   TIME_DATE) : "SIN_LIMITE_SUP"));
+        }
+     }
+   else
+     {
+      PrintFormat("BuildTrainableIndex: filas entrenables alineadas ONE_BAR = %d (sin filtro de fechas)",
+                  g_numTrainable);
+     }
+
+   return(g_numTrainable);
+  }
+
+
+//-------------------------------------------------------------------
+// Inserta una regla candidata SIN límite de pool ni ranking previo.
+// El orden definitivo lo pondrá ApplySharpeRankingToRules() más tarde.
+//-------------------------------------------------------------------
+void InsertCandidateRule(const RuleInfo &cand)
+  {
+   int n = ArraySize(g_rules);
+   ArrayResize(g_rules, n + 1);
+   g_rules[n] = cand;
+  }
+
+// -------------------------------------------------------------------
+// Entrenamiento OneR: top-K (feature, bin) por rendimiento medio
+//
+// LEAKFIX Pepita 1:
+//   - Selección (argmax/argmin) SOLO con meanRawTrain
+//   - Test (meanRawTest) SOLO como gate (signo consistente)
+//   - cand.meanRet se guarda desde TRAIN (magnitud positiva)
+// -------------------------------------------------------------------
+bool TrainOneR_TopK()
+  {
+   if(g_numTrainable <= 0)
+     {
+      Print("TrainOneR_TopK: no hay filas entrenables.");
+      return(false);
+     }
+
+   if(InpNumBins <= 0)
+     {
+      Print("TrainOneR_TopK: InpNumBins debe ser > 0.");
+      return(false);
+     }
+
+   if(g_numTrainable < 2)
+     {
+      Print("TrainOneR_TopK: filas entrenables insuficientes para aplicar split Train/Test.");
+      return(false);
+     }
+
+   ArrayResize(g_rules, 0);
+
+//--- 1) Calcular tamaño de Train/Test según InpTrainTestSplit
+   int    nAll      = g_numTrainable;
+   double trainFrac = 0.5;
+
+   switch(InpTrainTestSplit)
+     {
+      case SPLIT_90_10:
+         trainFrac = 0.90;
+         break;
+      case SPLIT_80_20:
+         trainFrac = 0.80;
+         break;
+      case SPLIT_70_30:
+         trainFrac = 0.70;
+         break;
+      case SPLIT_60_40:
+         trainFrac = 0.60;
+         break;
+      case SPLIT_50_50:
+         trainFrac = 0.50;
+         break;
+      case SPLIT_40_60:
+         trainFrac = 0.40;
+         break;
+      case SPLIT_30_70:
+         trainFrac = 0.30;
+         break;
+      case SPLIT_20_80:
+         trainFrac = 0.20;
+         break;
+      case SPLIT_10_90:
+         trainFrac = 0.10;
+         break;
+      default:
+         trainFrac = 0.50;
+         break;
+     }
+
+   int trainCount = (int)MathFloor((double)nAll * trainFrac);
+   if(trainCount <= 0 || trainCount >= nAll)
+     {
+      PrintFormat("TrainOneR_TopK: partición degenerada (trainCount=%d, nAll=%d).", trainCount, nAll);
+      return(false);
+     }
+
+   int testCount          = nAll - trainCount;
+   int trainPct           = (int)MathRound(trainFrac * 100.0);
+   int testPct            = 100 - trainPct;
+   int trainStartInverted = nAll - trainCount; // INVERTED: Train = [trainStartInverted .. nAll-1]
+
+   PrintFormat("TrainOneR_TopK: usando split Train/Test %d/%d (train=%d, test=%d, total=%d), modo=%s",
+               trainPct, testPct, trainCount, testCount, nAll,
+               (InpTrainTestMode == TRAIN_TEST_CLASSIC ? "CLASSIC" : "INVERTED"));
+
+//--- 2) Recorremos features
+   for(int f=0; f<g_numFeatures; f++)
+     {
+      double vals[];
+      double rets[];
+      int    parts[];  // 0 = Train, 1 = Test
+
+      ArrayResize(vals,  0);
+      ArrayResize(rets,  0);
+      ArrayResize(parts, 0);
+
+      // Extraer pares (valorFeature, target) en filas entrenables
+      // Alineado ONE_BAR: feature[row] → target[row+1]
+      for(int k=0; k<g_numTrainable; k++)
+        {
+         int rowFeature = g_trainIndex[k];
+         int rowTarget  = rowFeature + 1;
+         if(rowTarget >= g_rows)
+            continue;
+
+         double v = g_features[rowFeature * g_numFeatures + f];
+         double t = g_target[rowTarget];
+
+         if(v == EMPTY_VALUE || !MathIsValidNumber(v) ||
+            t == EMPTY_VALUE || !MathIsValidNumber(t))
+            continue;
+
+         int part = 0; // 0=Train, 1=Test
+         if(InpTrainTestMode == TRAIN_TEST_CLASSIC)
+            part = (k < trainCount ? 0 : 1);
+         else // TRAIN_TEST_INVERTED
+            part = (k >= trainStartInverted ? 0 : 1);
+
+         int pos = ArraySize(vals);
+         ArrayResize(vals,  pos + 1);
+         ArrayResize(rets,  pos + 1);
+         ArrayResize(parts, pos + 1);
+
+         vals[pos]  = v;
+         rets[pos]  = t;
+         parts[pos] = part;
+        }
+
+      int N = ArraySize(vals);
+      if(N < InpNumBins * InpMinTradesPerBin)
+         continue; // muy pocos datos para este feature en total
+
+      //==============================================================
+      // 3) Binning tipo qcut SIN leakage:
+      //    edges[] se calcula SOLO con vals del tramo Train (part==0).
+      //==============================================================
+      double trainVals[];
+      ArrayResize(trainVals, 0);
+
+      for(int i=0; i<N; i++)
+        {
+         if(parts[i] != 0) // solo TRAIN
+            continue;
+
+         int p = ArraySize(trainVals);
+         ArrayResize(trainVals, p + 1);
+         trainVals[p] = vals[i];
+        }
+
+      int Ntr = ArraySize(trainVals);
+      if(Ntr <= 1)
+         continue;
+
+      double sortedTrain[];
+      ArrayResize(sortedTrain, Ntr);
+      ArrayCopy(sortedTrain, trainVals);
+      ArraySort(sortedTrain); // ascendente
+
+      double edges[];
+      ArrayResize(edges, InpNumBins + 1);
+
+      edges[0] = sortedTrain[0];
+      for(int b=1; b<InpNumBins; b++)
+        {
+         int posEdge = (b * Ntr) / InpNumBins;
+         if(posEdge < 0)
+            posEdge = 0;
+         if(posEdge > Ntr - 1)
+            posEdge = Ntr - 1;
+         edges[b] = sortedTrain[posEdge];
+        }
+      edges[InpNumBins] = sortedTrain[Ntr - 1];
+
+      //--- 4) Estadísticos por bin: total + Train + Test (usando edges fijos de Train)
+      double sumRet[];
+      int    countRet[];
+
+      double sumRetTrain[];
+      double sumRetTest[];
+      int    countRetTrain[];
+      int    countRetTest[];
+
+      ArrayResize(sumRet,        InpNumBins);
+      ArrayResize(countRet,      InpNumBins);
+      ArrayResize(sumRetTrain,   InpNumBins);
+      ArrayResize(sumRetTest,    InpNumBins);
+      ArrayResize(countRetTrain, InpNumBins);
+      ArrayResize(countRetTest,  InpNumBins);
+
+      for(int b=0; b<InpNumBins; b++)
+        {
+         sumRet[b]        = 0.0;
+         countRet[b]      = 0;
+         sumRetTrain[b]   = 0.0;
+         sumRetTest[b]    = 0.0;
+         countRetTrain[b] = 0;
+         countRetTest[b]  = 0;
+        }
+
+      // Asignar cada fila (Train+Test) a un bin definido por edges[Train]
+      for(int i=0; i<N; i++)
+        {
+         double v = vals[i];
+         double t = rets[i];
+         int    p = parts[i]; // 0=Train, 1=Test
+
+         int binIndex = InpNumBins - 1;
+         for(int b=0; b<InpNumBins - 1; b++)
+           {
+            if(v < edges[b+1])
+              {
+               binIndex = b;
+               break;
+              }
+           }
+
+         sumRet[binIndex]   += t;
+         countRet[binIndex] += 1;
+
+         if(p == 0)
+           {
+            sumRetTrain[binIndex]   += t;
+            countRetTrain[binIndex] += 1;
+           }
+         else
+           {
+            sumRetTest[binIndex]   += t;
+            countRetTest[binIndex] += 1;
+           }
+        }
+
+      //--- 5) Comprobar mínimo de trades por bin (total), igual que antes
+      bool featureOK = true;
+      for(int b=0; b<InpNumBins; b++)
+        {
+         if(countRet[b] < InpMinTradesPerBin)
+           {
+            featureOK = false;
+            break;
+           }
+        }
+      if(!featureOK)
+         continue;
+
+      //--- 6) Buscar mejor LONG y mejor SHORT para ESTE feature (LEAKFIX)
+      int    bestLongBin    = -1;
+      double bestLongScore  = 0.0;  // meanRawTrain (positivo)
+
+      int    bestShortBin   = -1;
+      double bestShortScore = 0.0;  // meanRawTrain (negativo, más negativo = mejor)
+
+      for(int b=0; b<InpNumBins; b++)
+        {
+         if(countRetTrain[b] <= 0 || countRetTest[b] <= 0)
+            continue;
+
+         // Total solo para diagnóstico si quieres (no se usa para elegir)
+         // double meanRawTotal = sumRet[b]      / (double)countRet[b];
+         double meanRawTrain = sumRetTrain[b] / (double)countRetTrain[b];
+         double meanRawTest  = sumRetTest[b]  / (double)countRetTest[b];
+
+         // LONG: seleccionar por TRAIN, Test solo gate
+         if(meanRawTrain > 0.0)
+           {
+            if(meanRawTest <= 0.0)
+               continue;
+
+            if(bestLongBin == -1 || meanRawTrain > bestLongScore)
+              {
+               bestLongBin   = b;
+               bestLongScore = meanRawTrain;
+              }
+           }
+         // SHORT: seleccionar por TRAIN, Test solo gate
+         else
+            if(meanRawTrain < 0.0)
+              {
+               if(meanRawTest >= 0.0)
+                  continue;
+
+               if(bestShortBin == -1 || meanRawTrain < bestShortScore)
+                 {
+                  bestShortBin   = b;
+                  bestShortScore = meanRawTrain; // negativo
+                 }
+              }
+        }
+
+      //--- 7) Construir a lo sumo 2 reglas para este feature (LONG y SHORT)
+
+      // LONG
+      if(bestLongBin != -1)
+        {
+         RuleInfo cand;
+         cand.featureIndex    = f;
+         cand.binIndex        = bestLongBin;
+         cand.side            = +1;
+         cand.meanRet         = bestLongScore; // LEAKFIX: score desde TRAIN (positivo)
+         cand.numTrades       = countRet[bestLongBin];
+         cand.binLow          = edges[bestLongBin];
+         cand.binHigh         = edges[bestLongBin + 1];
+         cand.monkeyQuantile  = 0.0;
+         cand.monkeyPValue    = 1.0;
+         cand.indicatorHandle = INVALID_HANDLE;
+
+         cand.isCombo          = false;
+         cand.featureIndex2    = -1;
+         cand.binIndex2        = -1;
+         cand.binLow2          = 0.0;
+         cand.binHigh2         = 0.0;
+         cand.indicatorHandle2 = INVALID_HANDLE;
+
+         InsertCandidateRule(cand);
+        }
+
+      // SHORT
+      if(bestShortBin != -1)
+        {
+         RuleInfo cand;
+         cand.featureIndex    = f;
+         cand.binIndex        = bestShortBin;
+         cand.side            = -1;
+         cand.meanRet         = -bestShortScore; // LEAKFIX: magnitud positiva desde TRAIN
+         cand.numTrades       = countRet[bestShortBin];
+         cand.binLow          = edges[bestShortBin];
+         cand.binHigh         = edges[bestShortBin + 1];
+         cand.monkeyQuantile  = 0.0;
+         cand.monkeyPValue    = 1.0;
+         cand.indicatorHandle = INVALID_HANDLE;
+
+         cand.isCombo          = false;
+         cand.featureIndex2    = -1;
+         cand.binIndex2        = -1;
+         cand.binLow2          = 0.0;
+         cand.binHigh2         = 0.0;
+         cand.indicatorHandle2 = INVALID_HANDLE;
+
+         InsertCandidateRule(cand);
+        }
+
+     } // fin loop features
+
+   int numRules = ArraySize(g_rules);
+   if(numRules <= 0)
+     {
+      Print("TrainOneR_TopK: no se encontró ninguna regla válida tras selección (máx. 2 por feature).");
+      return(false);
+     }
+
+   PrintFormat("TrainOneR_TopK: reglas OneR seleccionadas (máx. 2 por feature) antes de filtros sintético/monkey/Sharpe: %d",
+               numRules);
+   return(true);
+  }
+
+
+
+// -------------------------------------------------------------------
+// Entrena OneR univariante sobre un subconjunto de g_trainIndex
+// LEAKFIX Pepita 1:
+//   - Selección de bin SOLO por meanRawTrain
+//   - Test SOLO como gate
+//   - outRules[].meanRet desde TRAIN (magnitud positiva)
+// -------------------------------------------------------------------
+void TrainOneR_OnSubset(const int &subsetKIn[], int subsetCount,
+                        RuleInfo &outRules[])
+  {
+   ArrayResize(outRules, 0);
+
+   if(subsetCount <= 1 || g_numFeatures <= 0 || g_numTrainable <= 0)
+      return;
+
+   if(InpNumBins <= 0 || InpMinTradesPerBin <= 0)
+      return;
+
+//--- 0) Copiar y ordenar subsetK para garantizar orden temporal
+   int subsetK[];
+   ArrayResize(subsetK, subsetCount);
+   for(int i=0; i<subsetCount; i++)
+      subsetK[i] = subsetKIn[i];
+   ArraySort(subsetK); // ascendente por k (temporal)
+
+   int nAll = subsetCount;
+
+//--- 1) Partición Train/Test local
+   double trainFrac = 0.5;
+   switch(InpTrainTestSplit)
+     {
+      case SPLIT_90_10:
+         trainFrac = 0.90;
+         break;
+      case SPLIT_80_20:
+         trainFrac = 0.80;
+         break;
+      case SPLIT_70_30:
+         trainFrac = 0.70;
+         break;
+      case SPLIT_60_40:
+         trainFrac = 0.60;
+         break;
+      case SPLIT_50_50:
+         trainFrac = 0.50;
+         break;
+      case SPLIT_40_60:
+         trainFrac = 0.40;
+         break;
+      case SPLIT_30_70:
+         trainFrac = 0.30;
+         break;
+      case SPLIT_20_80:
+         trainFrac = 0.20;
+         break;
+      case SPLIT_10_90:
+         trainFrac = 0.10;
+         break;
+      default:
+         trainFrac = 0.50;
+         break;
+     }
+
+   int trainCount = (int)MathFloor((double)nAll * trainFrac);
+   if(trainCount <= 0 || trainCount >= nAll)
+      return;
+
+   int trainStartInverted = nAll - trainCount;
+
+//--- 2) Loop por features
+   for(int f=0; f<g_numFeatures; f++)
+     {
+      double vals[], rets[];
+      int    parts[]; // 0=Train, 1=Test
+      ArrayResize(vals,  0);
+      ArrayResize(rets,  0);
+      ArrayResize(parts, 0);
+
+      // Extraer pares (valorFeature, target) en filas del subconjunto (orden temporal)
+      for(int iSub=0; iSub<subsetCount; iSub++)
+        {
+         int k = subsetK[iSub];
+         if(k < 0 || k >= g_numTrainable)
+            continue;
+
+         int rowFeature = g_trainIndex[k];
+         int rowTarget  = rowFeature + 1;
+         if(rowTarget >= g_rows)
+            continue;
+
+         double v = g_features[rowFeature * g_numFeatures + f];
+         double t = g_target[rowTarget];
+
+         if(v == EMPTY_VALUE || !MathIsValidNumber(v) ||
+            t == EMPTY_VALUE || !MathIsValidNumber(t))
+            continue;
+
+         int part;
+         if(InpTrainTestMode == TRAIN_TEST_CLASSIC)
+            part = (iSub < trainCount ? 0 : 1);
+         else
+            part = (iSub >= trainStartInverted ? 0 : 1);
+
+         int pos = ArraySize(vals);
+         ArrayResize(vals,  pos + 1);
+         ArrayResize(rets,  pos + 1);
+         ArrayResize(parts, pos + 1);
+
+         vals[pos]  = v;
+         rets[pos]  = t;
+         parts[pos] = part;
+        }
+
+      int N = ArraySize(vals);
+      if(N < InpNumBins * InpMinTradesPerBin)
+         continue;
+
+      //==============================================================
+      // 3) Binning tipo qcut SIN leakage: edges SOLO con TRAIN (part==0)
+      //==============================================================
+      double trainVals[];
+      ArrayResize(trainVals, 0);
+
+      for(int i=0; i<N; i++)
+        {
+         if(parts[i] != 0)
+            continue;
+
+         int p = ArraySize(trainVals);
+         ArrayResize(trainVals, p + 1);
+         trainVals[p] = vals[i];
+        }
+
+      int Ntr = ArraySize(trainVals);
+      if(Ntr < InpNumBins || Ntr <= 1)
+         continue;
+
+      double sortedTrain[];
+      ArrayResize(sortedTrain, Ntr);
+      ArrayCopy(sortedTrain, trainVals);
+      ArraySort(sortedTrain);
+
+      double edges[];
+      ArrayResize(edges, InpNumBins + 1);
+
+      edges[0] = sortedTrain[0];
+      for(int b=1; b<InpNumBins; b++)
+        {
+         int posEdge = (b * Ntr) / InpNumBins;
+         if(posEdge < 0)
+            posEdge = 0;
+         if(posEdge > Ntr - 1)
+            posEdge = Ntr - 1;
+         edges[b] = sortedTrain[posEdge];
+        }
+      edges[InpNumBins] = sortedTrain[Ntr - 1];
+
+      //--- 4) Estadísticos por bin (Total / Train / Test) usando edges fijos (Train)
+      double sumRet[], sumRetTrain[], sumRetTest[];
+      int    countRet[], countRetTrain[], countRetTest[];
+
+      ArrayResize(sumRet,        InpNumBins);
+      ArrayResize(sumRetTrain,   InpNumBins);
+      ArrayResize(sumRetTest,    InpNumBins);
+      ArrayResize(countRet,      InpNumBins);
+      ArrayResize(countRetTrain, InpNumBins);
+      ArrayResize(countRetTest,  InpNumBins);
+
+      for(int b=0; b<InpNumBins; b++)
+        {
+         sumRet[b]        = 0.0;
+         countRet[b]      = 0;
+         sumRetTrain[b]   = 0.0;
+         countRetTrain[b] = 0;
+         sumRetTest[b]    = 0.0;
+         countRetTest[b]  = 0;
+        }
+
+      for(int i=0; i<N; i++)
+        {
+         double v = vals[i];
+         double t = rets[i];
+         int    p = parts[i];
+
+         int binIndex = InpNumBins - 1;
+         for(int b=0; b<InpNumBins - 1; b++)
+           {
+            if(v < edges[b+1])
+              {
+               binIndex = b;
+               break;
+              }
+           }
+
+         sumRet[binIndex]   += t;
+         countRet[binIndex] += 1;
+
+         if(p == 0)
+           {
+            sumRetTrain[binIndex]   += t;
+            countRetTrain[binIndex] += 1;
+           }
+         else
+           {
+            sumRetTest[binIndex]   += t;
+            countRetTest[binIndex] += 1;
+           }
+        }
+
+      //--- 5) Mínimo de trades por bin (total)
+      bool featureOK = true;
+      for(int b=0; b<InpNumBins; b++)
+        {
+         if(countRet[b] < InpMinTradesPerBin)
+           { featureOK = false; break; }
+        }
+      if(!featureOK)
+         continue;
+
+      //--- 6) Mejor LONG y mejor SHORT (LEAKFIX)
+      int    bestLongBin    = -1;
+      double bestLongScore  = 0.0;  // meanRawTrain positivo
+
+      int    bestShortBin   = -1;
+      double bestShortScore = 0.0;  // meanRawTrain negativo
+
+      for(int b=0; b<InpNumBins; b++)
+        {
+         if(countRetTrain[b] <= 0 || countRetTest[b] <= 0)
+            continue;
+
+         double meanRawTrain = sumRetTrain[b] / (double)countRetTrain[b];
+         double meanRawTest  = sumRetTest[b]  / (double)countRetTest[b];
+
+         // LONG: elegir por TRAIN, Test gate
+         if(meanRawTrain > 0.0)
+           {
+            if(meanRawTest <= 0.0)
+               continue;
+
+            if(bestLongBin == -1 || meanRawTrain > bestLongScore)
+              { bestLongBin = b; bestLongScore = meanRawTrain; }
+           }
+         // SHORT: elegir por TRAIN, Test gate
+         else
+            if(meanRawTrain < 0.0)
+              {
+               if(meanRawTest >= 0.0)
+                  continue;
+
+               if(bestShortBin == -1 || meanRawTrain < bestShortScore)
+                 { bestShortBin = b; bestShortScore = meanRawTrain; }
+              }
+        }
+
+      //--- 7) Emitir reglas (meanRet desde TRAIN)
+      if(bestLongBin != -1)
+        {
+         RuleInfo cand;
+         cand.featureIndex     = f;
+         cand.binIndex         = bestLongBin;
+         cand.side             = +1;
+         cand.meanRet          = bestLongScore;
+         cand.numTrades        = countRet[bestLongBin];
+         cand.binLow           = edges[bestLongBin];
+         cand.binHigh          = edges[bestLongBin + 1];
+         cand.monkeyQuantile   = 0.0;
+         cand.monkeyPValue     = 1.0;
+         cand.indicatorHandle  = INVALID_HANDLE;
+
+         cand.isCombo          = false;
+         cand.featureIndex2    = -1;
+         cand.binIndex2        = -1;
+         cand.binLow2          = 0.0;
+         cand.binHigh2         = 0.0;
+         cand.indicatorHandle2 = INVALID_HANDLE;
+
+         int pos = ArraySize(outRules);
+         ArrayResize(outRules, pos + 1);
+         outRules[pos] = cand;
+        }
+
+      if(bestShortBin != -1)
+        {
+         RuleInfo cand;
+         cand.featureIndex     = f;
+         cand.binIndex         = bestShortBin;
+         cand.side             = -1;
+         cand.meanRet          = -bestShortScore; // magnitud positiva desde TRAIN
+         cand.numTrades        = countRet[bestShortBin];
+         cand.binLow           = edges[bestShortBin];
+         cand.binHigh          = edges[bestShortBin + 1];
+         cand.monkeyQuantile   = 0.0;
+         cand.monkeyPValue     = 1.0;
+         cand.indicatorHandle  = INVALID_HANDLE;
+
+         cand.isCombo          = false;
+         cand.featureIndex2    = -1;
+         cand.binIndex2        = -1;
+         cand.binLow2          = 0.0;
+         cand.binHigh2         = 0.0;
+         cand.indicatorHandle2 = INVALID_HANDLE;
+
+         int pos = ArraySize(outRules);
+         ArrayResize(outRules, pos + 1);
+         outRules[pos] = cand;
+        }
+     } // fin loop features
+  }
+
+// -------------------------------------------------------------------
+// Genera combinaciones AND 2-a-2 a partir de las reglas actuales
+//
+// LEAKFIX Pepita 1 (combos):
+//   - Condición de aceptación: Train (signo) + Test gate (signo)
+//   - combo.meanRet se guarda desde TRAIN (magnitud positiva)
+//   - meanRawTotal solo para logs/diagnóstico
+// -------------------------------------------------------------------
+void GeneratePairwiseAndCombinationsFromRules()
+  {
+   int baseN = ArraySize(g_rules);
+   if(baseN <= 1 || g_numTrainable < 2)
+      return;
+
+// Índices de reglas base por lado
+   int idxLong[], idxShort[];
+   ArrayResize(idxLong, 0);
+   ArrayResize(idxShort, 0);
+
+   for(int i=0; i<baseN; i++)
+     {
+      if(g_rules[i].side > 0)
+        {
+         int p = ArraySize(idxLong);
+         ArrayResize(idxLong, p+1);
+         idxLong[p] = i;
+        }
+      else
+         if(g_rules[i].side < 0)
+           {
+            int p = ArraySize(idxShort);
+            ArrayResize(idxShort, p+1);
+            idxShort[p] = i;
+           }
+     }
+
+   if(InpVerboseComboLogs)
+     {
+      Print("============================================");
+      PrintFormat("GeneratePairwiseAndCombinations: reglas base=%d (LONG=%d, SHORT=%d)",
+                  baseN, ArraySize(idxLong), ArraySize(idxShort));
+     }
+
+// Recalcular partición Train/Test exactamente igual que en TrainOneR_TopK
+   int    nAll      = g_numTrainable;
+   double trainFrac = 0.5;
+
+   switch(InpTrainTestSplit)
+     {
+      case SPLIT_90_10:
+         trainFrac = 0.90;
+         break;
+      case SPLIT_80_20:
+         trainFrac = 0.80;
+         break;
+      case SPLIT_70_30:
+         trainFrac = 0.70;
+         break;
+      case SPLIT_60_40:
+         trainFrac = 0.60;
+         break;
+      case SPLIT_50_50:
+         trainFrac = 0.50;
+         break;
+      case SPLIT_40_60:
+         trainFrac = 0.40;
+         break;
+      case SPLIT_30_70:
+         trainFrac = 0.30;
+         break;
+      case SPLIT_20_80:
+         trainFrac = 0.20;
+         break;
+      case SPLIT_10_90:
+         trainFrac = 0.10;
+         break;
+      default:
+         trainFrac = 0.50;
+         break;
+     }
+
+   int trainCount = (int)MathFloor((double)nAll * trainFrac);
+   if(trainCount <= 0 || trainCount >= nAll)
+     {
+      PrintFormat("GeneratePairwiseAndCombinations: partición degenerada (trainCount=%d, nAll=%d). No se generan combos.",
+                  trainCount, nAll);
+      return;
+     }
+
+   int trainStartInverted = nAll - trainCount; // para modo INVERTED
+
+   RuleInfo comboList[];
+   ArrayResize(comboList, 0);
+
+   int acceptedLongCombos  = 0;
+   int acceptedShortCombos = 0;
+
+// -------------------------
+// 1) Combos LONG (AND LONG-LONG)
+// -------------------------
+   int nLong = ArraySize(idxLong);
+   for(int a=0; a<nLong; a++)
+     {
+      for(int b=a+1; b<nLong; b++)
+        {
+         int idxA = idxLong[a];
+         int idxB = idxLong[b];
+
+         RuleInfo baseA = g_rules[idxA];
+         RuleInfo baseB = g_rules[idxB];
+
+         double sumTotal   = 0.0;
+         double sumTrain   = 0.0;
+         double sumTest    = 0.0;
+         int    countTotal = 0;
+         int    countTrain = 0;
+         int    countTest  = 0;
+
+         for(int k=0; k<g_numTrainable; k++)
+           {
+            int rowFeature = g_trainIndex[k];
+            int rowTarget  = rowFeature + 1;
+            if(rowTarget >= g_rows)
+               continue;
+
+            double ret = g_target[rowTarget];
+            if(ret == EMPTY_VALUE || !MathIsValidNumber(ret))
+               continue;
+
+            // feature 1
+            double v1 = g_features[rowFeature * g_numFeatures + baseA.featureIndex];
+            if(v1 == EMPTY_VALUE || !MathIsValidNumber(v1))
+               continue;
+
+            bool match1;
+            if(baseA.binIndex < InpNumBins - 1)
+               match1 = (v1 >= baseA.binLow && v1 < baseA.binHigh);
+            else
+               match1 = (v1 >= baseA.binLow);
+
+            if(!match1)
+               continue;
+
+            // feature 2
+            double v2 = g_features[rowFeature * g_numFeatures + baseB.featureIndex];
+            if(v2 == EMPTY_VALUE || !MathIsValidNumber(v2))
+               continue;
+
+            bool match2;
+            if(baseB.binIndex < InpNumBins - 1)
+               match2 = (v2 >= baseB.binLow && v2 < baseB.binHigh);
+            else
+               match2 = (v2 >= baseB.binLow);
+
+            if(!match2)
+               continue;
+
+            int part;
+            if(InpTrainTestMode == TRAIN_TEST_CLASSIC)
+               part = (k < trainCount ? 0 : 1);
+            else
+               part = (k >= trainStartInverted ? 0 : 1);
+
+            sumTotal += ret;
+            countTotal++;
+
+            if(part == 0)
+              {
+               sumTrain += ret;
+               countTrain++;
+              }
+            else
+              {
+               sumTest  += ret;
+               countTest++;
+              }
+           }
+
+         if(countTotal <= 0 || countTrain <= 0 || countTest <= 0)
+            continue;
+
+         // filtro por nº mínimo de trades totales
+         if(InpFilterCombosByMinTrades && countTotal < InpMinTradesPerCombo)
+            continue;
+
+         double meanRawTotal = sumTotal / (double)countTotal; // diagnóstico
+         double meanRawTrain = sumTrain / (double)countTrain; // SCORE
+         double meanRawTest  = sumTest  / (double)countTest;  // GATE
+
+         // LEAKFIX: condición LONG = Train>0 y Test>0 (Total NO decide)
+         if(meanRawTrain <= 0.0 || meanRawTest <= 0.0)
+            continue;
+
+         RuleInfo combo;
+         combo.featureIndex     = baseA.featureIndex;
+         combo.binIndex         = baseA.binIndex;
+         combo.side             = +1;
+         combo.meanRet          = meanRawTrain;   // LEAKFIX: score desde TRAIN
+         combo.numTrades        = countTotal;
+         combo.binLow           = baseA.binLow;
+         combo.binHigh          = baseA.binHigh;
+         combo.monkeyQuantile   = 0.0;
+         combo.monkeyPValue     = 1.0;
+         combo.indicatorHandle  = INVALID_HANDLE;
+
+         combo.isCombo          = true;
+         combo.featureIndex2    = baseB.featureIndex;
+         combo.binIndex2        = baseB.binIndex;
+         combo.binLow2          = baseB.binLow;
+         combo.binHigh2         = baseB.binHigh;
+         combo.indicatorHandle2 = INVALID_HANDLE;
+
+         int pos = ArraySize(comboList);
+         ArrayResize(comboList, pos + 1);
+         comboList[pos] = combo;
+         acceptedLongCombos++;
+
+         if(InpVerboseComboLogs)
+           {
+            PrintFormat("COMBO LONG ACEPTADA: %s | meanTotal=%.6f (Train=%.6f, Test=%.6f) | trades(T/Tr/Ts)=%d/%d/%d",
+                        DescribeRuleShort(combo),
+                        meanRawTotal, meanRawTrain, meanRawTest,
+                        countTotal, countTrain, countTest);
+           }
+        }
+     }
+
+// -------------------------
+// 2) Combos SHORT (AND SHORT-SHORT)
+// -------------------------
+   int nShort = ArraySize(idxShort);
+   for(int a=0; a<nShort; a++)
+     {
+      for(int b=a+1; b<nShort; b++)
+        {
+         int idxA = idxShort[a];
+         int idxB = idxShort[b];
+
+         RuleInfo baseA = g_rules[idxA];
+         RuleInfo baseB = g_rules[idxB];
+
+         double sumTotal   = 0.0;
+         double sumTrain   = 0.0;
+         double sumTest    = 0.0;
+         int    countTotal = 0;
+         int    countTrain = 0;
+         int    countTest  = 0;
+
+         for(int k=0; k<g_numTrainable; k++)
+           {
+            int rowFeature = g_trainIndex[k];
+            int rowTarget  = rowFeature + 1;
+            if(rowTarget >= g_rows)
+               continue;
+
+            double ret = g_target[rowTarget];
+            if(ret == EMPTY_VALUE || !MathIsValidNumber(ret))
+               continue;
+
+            // feature 1
+            double v1 = g_features[rowFeature * g_numFeatures + baseA.featureIndex];
+            if(v1 == EMPTY_VALUE || !MathIsValidNumber(v1))
+               continue;
+
+            bool match1;
+            if(baseA.binIndex < InpNumBins - 1)
+               match1 = (v1 >= baseA.binLow && v1 < baseA.binHigh);
+            else
+               match1 = (v1 >= baseA.binLow);
+
+            if(!match1)
+               continue;
+
+            // feature 2
+            double v2 = g_features[rowFeature * g_numFeatures + baseB.featureIndex];
+            if(v2 == EMPTY_VALUE || !MathIsValidNumber(v2))
+               continue;
+
+            bool match2;
+            if(baseB.binIndex < InpNumBins - 1)
+               match2 = (v2 >= baseB.binLow && v2 < baseB.binHigh);
+            else
+               match2 = (v2 >= baseB.binLow);
+
+            if(!match2)
+               continue;
+
+            int part;
+            if(InpTrainTestMode == TRAIN_TEST_CLASSIC)
+               part = (k < trainCount ? 0 : 1);
+            else
+               part = (k >= trainStartInverted ? 0 : 1);
+
+            sumTotal += ret;
+            countTotal++;
+
+            if(part == 0)
+              {
+               sumTrain += ret;
+               countTrain++;
+              }
+            else
+              {
+               sumTest  += ret;
+               countTest++;
+              }
+           }
+
+         if(countTotal <= 0 || countTrain <= 0 || countTest <= 0)
+            continue;
+
+         // filtro por nº mínimo de trades totales
+         if(InpFilterCombosByMinTrades && countTotal < InpMinTradesPerCombo)
+            continue;
+
+         double meanRawTotal = sumTotal / (double)countTotal; // diagnóstico
+         double meanRawTrain = sumTrain / (double)countTrain; // SCORE
+         double meanRawTest  = sumTest  / (double)countTest;  // GATE
+
+         // LEAKFIX: condición SHORT = Train<0 y Test<0 (Total NO decide)
+         if(meanRawTrain >= 0.0 || meanRawTest >= 0.0)
+            continue;
+
+         RuleInfo combo;
+         combo.featureIndex     = baseA.featureIndex;
+         combo.binIndex         = baseA.binIndex;
+         combo.side             = -1;
+         combo.meanRet          = -meanRawTrain; // LEAKFIX: magnitud positiva desde TRAIN
+         combo.numTrades        = countTotal;
+         combo.binLow           = baseA.binLow;
+         combo.binHigh          = baseA.binHigh;
+         combo.monkeyQuantile   = 0.0;
+         combo.monkeyPValue     = 1.0;
+         combo.indicatorHandle  = INVALID_HANDLE;
+
+         combo.isCombo          = true;
+         combo.featureIndex2    = baseB.featureIndex;
+         combo.binIndex2        = baseB.binIndex;
+         combo.binLow2          = baseB.binLow;
+         combo.binHigh2         = baseB.binHigh;
+         combo.indicatorHandle2 = INVALID_HANDLE;
+
+         int pos = ArraySize(comboList);
+         ArrayResize(comboList, pos + 1);
+         comboList[pos] = combo;
+         acceptedShortCombos++;
+
+         if(InpVerboseComboLogs)
+           {
+            PrintFormat("COMBO SHORT ACEPTADA: %s | meanTotal=%.6f (Train=%.6f, Test=%.6f) | trades(T/Tr/Ts)=%d/%d/%d",
+                        DescribeRuleShort(combo),
+                        meanRawTotal, meanRawTrain, meanRawTest,
+                        countTotal, countTrain, countTest);
+           }
+        }
+     }
+
+   int combosN = ArraySize(comboList);
+   if(combosN <= 0)
+     {
+      Print("GeneratePairwiseAndCombinations: ninguna combinación 2-a-2 superó los filtros (Train/Test gate + trades).");
+      return;
+     }
+
+   int oldN = ArraySize(g_rules);
+   ArrayResize(g_rules, oldN + combosN);
+   for(int i=0; i<combosN; i++)
+      g_rules[oldN + i] = comboList[i];
+
+   PrintFormat("GeneratePairwiseAndCombinations: añadidas %d combinaciones (LONG=%d, SHORT=%d). Total reglas ahora: %d",
+               combosN, acceptedLongCombos, acceptedShortCombos, ArraySize(g_rules));
+  }
+
+
+
+//-------------------------------------------------------------------
+// K-S similarity: 1 - D entre dos muestras de retornos
+//-------------------------------------------------------------------
+double KS_Similarity(const double &x[], const int nx,
+                     const double &y[], const int ny)
+  {
+   if(nx <= 0 || ny <= 0)
+      return(0.0);
+
+   double a[], b[];
+   ArrayResize(a, nx);
+   ArrayResize(b, ny);
+
+   for(int i=0; i<nx; i++)
+      a[i] = x[i];
+   for(int j=0; j<ny; j++)
+      b[j] = y[j];
+
+   ArraySort(a);
+   ArraySort(b);
+
+   int i = 0, j = 0;
+   double cdf1 = 0.0, cdf2 = 0.0;
+   double D    = 0.0;
+
+   while(i < nx && j < ny)
+     {
+      if(a[i] <= b[j])
+        {
+         cdf1 = (double)(i + 1) / (double)nx;
+         i++;
+        }
+      else
+        {
+         cdf2 = (double)(j + 1) / (double)ny;
+         j++;
+        }
+      double diff = MathAbs(cdf1 - cdf2);
+      if(diff > D)
+         D = diff;
+     }
+
+   while(i < nx)
+     {
+      cdf1 = (double)(i + 1) / (double)nx;
+      i++;
+      double diff = MathAbs(cdf1 - cdf2);
+      if(diff > D)
+         D = diff;
+     }
+
+   while(j < ny)
+     {
+      cdf2 = (double)(j + 1) / (double)ny;
+      j++;
+      double diff = MathAbs(cdf1 - cdf2);
+      if(diff > D)
+         D = diff;
+     }
+
+   double score = 1.0 - D;
+   if(score < 0.0)
+      score = 0.0;
+   if(score > 1.0)
+      score = 1.0;
+   return(score);
+  }
+
+//-------------------------------------------------------------------
+// Cálculo de ACF hasta max_lag (incluye lag 0)
+// Normalización correcta: acf[k] = cov_k / cov_0
+//   - acf[0] = 1.0
+//   - cov_0 = sum_{t=0..n-1} (x_t-mean)^2
+//-------------------------------------------------------------------
+void ComputeACF(const double &r[], const int n, const int max_lag,
+                double &acf[])
+  {
+   if(n <= 1 || max_lag < 0)
+     {
+      ArrayResize(acf, 0);
+      return;
+     }
+
+   int L = max_lag;
+   if(L > n - 1)
+      L = n - 1;
+
+   ArrayResize(acf, L + 1);
+
+// Media
+   double mean = 0.0;
+   for(int i=0; i<n; i++)
+      mean += r[i];
+   mean /= (double)n;
+
+// cov_0 (suma de cuadrados)
+   double cov0 = 0.0;
+   for(int i=0; i<n; i++)
+     {
+      double d = r[i] - mean;
+      cov0 += d * d;
+     }
+
+   if(cov0 <= 0.0 || !MathIsValidNumber(cov0))
+     {
+      for(int k=0; k<=L; k++)
+         acf[k] = 0.0;
+      return;
+     }
+
+   acf[0] = 1.0;
+
+// Lags 1..L
+   for(int k=1; k<=L; k++)
+     {
+      double num = 0.0;
+      for(int t=k; t<n; t++)
+         num += (r[t] - mean) * (r[t - k] - mean);
+
+      acf[k] = num / cov0;
+     }
+  }
+
+
+//-------------------------------------------------------------------
+// Correlación de Pearson entre dos vectores
+//-------------------------------------------------------------------
+double Corr(const double &a[], const double &b[], const int len)
+  {
+   if(len <= 1)
+      return(0.0);
+
+   double ma = 0.0, mb = 0.0;
+   for(int i=0; i<len; i++)
+     {
+      ma += a[i];
+      mb += b[i];
+     }
+   ma /= (double)len;
+   mb /= (double)len;
+
+   double va = 0.0, vb = 0.0, cov = 0.0;
+   for(int i=0; i<len; i++)
+     {
+      double da = a[i] - ma;
+      double db = b[i] - mb;
+      cov += da * db;
+      va  += da * da;
+      vb  += db * db;
+     }
+
+   if(va <= 0.0 || vb <= 0.0)
+      return(0.0);
+
+   return(cov / MathSqrt(va * vb));
+  }
+
+//-------------------------------------------------------------------
+// Evalúa similitud base vs sintético sobre una serie 1D de retornos
+//-------------------------------------------------------------------
+void EvaluateReturnSeriesSimilarity(const double &base_ret[], const int n_base,
+                                    const double &syn_ret[],  const int n_syn,
+                                    const int max_lag,
+                                    double &out_ks,
+                                    double &out_acf_ret,
+                                    double &out_acf_sq)
+  {
+   out_ks      = 0.0;
+   out_acf_ret = 0.0;
+   out_acf_sq  = 0.0;
+
+   int n = (n_base < n_syn ? n_base : n_syn);
+   if(n <= max_lag + 5 || n <= 1)
+      return;
+
+   double b[], s[];
+   ArrayResize(b, n);
+   ArrayResize(s, n);
+
+   for(int i=0; i<n; i++)
+     {
+      b[i] = base_ret[i];
+      s[i] = syn_ret[i];
+     }
+
+// 1) K-S sobre la distribución de retornos
+   out_ks = KS_Similarity(b, n, s, n);
+
+// 2) ACF de retornos
+   double acf_b[], acf_s[];
+   ComputeACF(b, n, max_lag, acf_b);
+   ComputeACF(s, n, max_lag, acf_s);
+
+   int L = max_lag;
+   if(ArraySize(acf_b) < L + 1 || ArraySize(acf_s) < L + 1 || L <= 0)
+     {
+      out_acf_ret = 0.0;
+     }
+   else
+     {
+      double acf_b_sub[], acf_s_sub[];
+      ArrayResize(acf_b_sub, L);
+      ArrayResize(acf_s_sub, L);
+      // Excluimos lag 0
+      for(int k=0; k<L; k++)
+        {
+         acf_b_sub[k] = acf_b[k + 1];
+         acf_s_sub[k] = acf_s[k + 1];
+        }
+      out_acf_ret = Corr(acf_b_sub, acf_s_sub, L);
+     }
+
+// 3) ACF de retornos^2 (volatilidad)
+   for(int i=0; i<n; i++)
+     {
+      b[i] = b[i] * b[i];
+      s[i] = s[i] * s[i];
+     }
+
+   ComputeACF(b, n, max_lag, acf_b);
+   ComputeACF(s, n, max_lag, acf_s);
+
+   if(ArraySize(acf_b) < L + 1 || ArraySize(acf_s) < L + 1 || L <= 0)
+     {
+      out_acf_sq = 0.0;
+     }
+   else
+     {
+      double acf_b2_sub[], acf_s2_sub[];
+      ArrayResize(acf_b2_sub, L);
+      ArrayResize(acf_s2_sub, L);
+      for(int k=0; k<L; k++)
+        {
+         acf_b2_sub[k] = acf_b[k + 1];
+         acf_s2_sub[k] = acf_s[k + 1];
+        }
+      out_acf_sq = Corr(acf_b2_sub, acf_s2_sub, L);
+     }
+  }
+
+//-------------------------------------------------------------------
+// Hybrid bootstrap 1D sobre la serie de retornos de la regla
+//-------------------------------------------------------------------
+void GenerateHybridBootstrap1D(const double &base_ret[], const int n_base,
+                               double &syn_ret[],         const int synth_len,
+                               double keep_percentage)
+  {
+   if(n_base <= 0 || synth_len <= 0)
+     {
+      ArrayResize(syn_ret, 0);
+      return;
+     }
+
+   ArrayResize(syn_ret, synth_len);   // Garantizar tamaño mínimo aquí
+
+   if(keep_percentage < 0.0)
+      keep_percentage = 0.0;
+   if(keep_percentage > 1.0)
+      keep_percentage = 1.0;
+
+   int n_vec      = n_base;
+   int n_segments = (int)MathCeil((double)synth_len / (double)n_vec);
+
+   bool keep_flags[];
+   ArrayResize(keep_flags, n_vec);
+
+   int out_idx = 0;
+
+   for(int seg=0; seg<n_segments && out_idx < synth_len; seg++)
+     {
+      // 1) decidir qué posiciones conservar
+      for(int i=0; i<n_vec; i++)
+         keep_flags[i] = false;
+
+      int n_keep = (int)MathRound((double)n_vec * keep_percentage);
+      if(n_keep < 0)
+         n_keep = 0;
+      if(n_keep > n_vec)
+         n_keep = n_vec;
+
+      int marked = 0;
+      while(marked < n_keep && n_vec > 0)
+        {
+         int idx = MathRand() % n_vec;
+         if(!keep_flags[idx])
+           {
+            keep_flags[idx] = true;
+            marked++;
+           }
+        }
+
+      // 2) construir segmento híbrido
+      for(int j=0; j<n_vec && out_idx < synth_len; j++)
+        {
+         int src_idx;
+         if(keep_flags[j])
+            src_idx = j;
+         else
+           {
+            if(n_vec > 1)
+              {
+               do
+                 {
+                  src_idx = MathRand() % n_vec;
+                 }
+               while(src_idx == j);
+              }
+            else
+               src_idx = 0;
+           }
+
+         syn_ret[out_idx] = base_ret[src_idx];
+         out_idx++;
+        }
+     }
+  }
+
+//-------------------------------------------------------------------
+// Extraer retornos de las barras donde la regla estaría activa
+// - Univariante: condición sobre un único feature/bin.
+// - Combo: condición AND sobre (featureIndex,bin) y (featureIndex2,bin2).
+//-------------------------------------------------------------------
+void CollectRuleReturns(const RuleInfo &rule, double &retList[])
+  {
+   ArrayResize(retList, 0);
+
+   int f1 = rule.featureIndex;
+   int f2 = rule.featureIndex2;
+
+   for(int k=0; k<g_numTrainable; k++)
+     {
+      int rowFeature = g_trainIndex[k];
+      int rowTarget  = rowFeature + 1;
+      if(rowTarget >= g_rows)
+         continue;
+
+      double t = g_target[rowTarget];
+      if(t == EMPTY_VALUE || !MathIsValidNumber(t))
+         continue;
+
+      // --- feature 1 ---
+      double v1 = g_features[rowFeature * g_numFeatures + f1];
+      if(v1 == EMPTY_VALUE || !MathIsValidNumber(v1))
+         continue;
+
+      bool match1;
+      if(rule.binIndex < InpNumBins - 1)
+         match1 = (v1 >= rule.binLow && v1 < rule.binHigh);
+      else
+         match1 = (v1 >= rule.binLow);
+
+      if(!match1)
+         continue;
+
+      // --- si es combo, comprobar también feature 2 ---
+      if(rule.isCombo)
+        {
+         if(f2 < 0 || f2 >= g_numFeatures)
+            continue;
+
+         double v2 = g_features[rowFeature * g_numFeatures + f2];
+         if(v2 == EMPTY_VALUE || !MathIsValidNumber(v2))
+            continue;
+
+         bool match2;
+         if(rule.binIndex2 < InpNumBins - 1)
+            match2 = (v2 >= rule.binLow2 && v2 < rule.binHigh2);
+         else
+            match2 = (v2 >= rule.binLow2);
+
+         if(!match2)
+            continue;
+        }
+
+      int pos = ArraySize(retList);
+      ArrayResize(retList, pos + 1);
+      retList[pos] = t;   // retorno de la barra siguiente
+     }
+  }
+
+//-------------------------------------------------------------------
+// Máscara de activación de una regla sobre g_trainIndex
+// mask[k] = true si la regla estaría activa en la fila entrenable k
+//-------------------------------------------------------------------
+void BuildRuleActivationMask(const RuleInfo &rule, bool &mask[])
+  {
+   int n = g_numTrainable;
+   ArrayResize(mask, n);
+
+   int f1 = rule.featureIndex;
+   int f2 = rule.featureIndex2;
+
+   for(int idx=0; idx<n; idx++)
+     {
+      mask[idx] = false;
+
+      int rowFeature = g_trainIndex[idx];
+      int rowTarget  = rowFeature + 1;
+      if(rowTarget >= g_rows)
+         continue;
+
+      double t = g_target[rowTarget];
+      if(t == EMPTY_VALUE || !MathIsValidNumber(t))
+         continue;
+
+      // feature 1
+      if(f1 < 0 || f1 >= g_numFeatures)
+         continue;
+
+      double v1 = g_features[rowFeature * g_numFeatures + f1];
+      if(v1 == EMPTY_VALUE || !MathIsValidNumber(v1))
+         continue;
+
+      bool match1;
+      if(rule.binIndex < InpNumBins - 1)
+         match1 = (v1 >= rule.binLow && v1 < rule.binHigh);
+      else
+         match1 = (v1 >= rule.binLow);
+
+      if(!match1)
+         continue;
+
+      // si es combo, comprobar feature 2
+      if(rule.isCombo)
+        {
+         if(f2 < 0 || f2 >= g_numFeatures)
+            continue;
+
+         double v2 = g_features[rowFeature * g_numFeatures + f2];
+         if(v2 == EMPTY_VALUE || !MathIsValidNumber(v2))
+            continue;
+
+         bool match2;
+         if(rule.binIndex2 < InpNumBins - 1)
+            match2 = (v2 >= rule.binLow2 && v2 < rule.binHigh2);
+         else
+            match2 = (v2 >= rule.binLow2);
+
+         if(!match2)
+            continue;
+        }
+
+      mask[idx] = true;
+     }
+  }
+
+//-------------------------------------------------------------------
+// Jaccard entre dos reglas: intersección / unión de barras activas
+//-------------------------------------------------------------------
+double ComputeJaccardForRulePair(const RuleInfo &ruleA,
+                                 const RuleInfo &ruleB)
+  {
+   bool maskA[], maskB[];
+
+   BuildRuleActivationMask(ruleA, maskA);
+   BuildRuleActivationMask(ruleB, maskB);
+
+   int nA = ArraySize(maskA);
+   int nB = ArraySize(maskB);
+   if(nA <= 0 || nB <= 0 || nA != nB)
+      return(0.0);
+
+   int inter = 0;
+   int uni   = 0;
+
+   for(int i=0; i<nA; i++)
+     {
+      bool a = maskA[i];
+      bool b = maskB[i];
+
+      if(a || b)
+        {
+         uni++;
+         if(a && b)
+            inter++;
+        }
+     }
+
+   if(uni <= 0)
+      return(0.0);
+
+   return((double)inter / (double)uni);
+  }
+
+//-------------------------------------------------------------------
+// JaccardDiversity: 1 - max_Jaccard(candidato, reglas_seleccionadas_mismo_lado)
+//  - Devuelve 1 si no hay solapamiento (o no hay reglas previas).
+//  - Devuelve 0 si el candidato es idéntico (J=1) a alguna del mismo lado.
+//  - Usa ComputeJaccardForRulePair + BuildRuleActivationMask ya existentes.
+//-------------------------------------------------------------------
+double ComputeJaccardDiversity(const RuleInfo &cand,
+                               const int &selectedIdx[],
+                               const int selectedCount)
+  {
+// Sin reglas previas → diversidad máxima
+   if(selectedCount <= 0)
+      return(1.0);
+
+   int totalRules = ArraySize(g_rules);
+   double maxJ = 0.0;
+
+   for(int i=0; i<selectedCount; i++)
+     {
+      int idxSel = selectedIdx[i];
+      if(idxSel < 0 || idxSel >= totalRules)
+         continue;
+
+      RuleInfo other = g_rules[idxSel];
+
+      // Solo comparamos con reglas del mismo lado (LONG vs LONG, SHORT vs SHORT)
+      if(other.side != cand.side)
+         continue;
+
+      double J = ComputeJaccardForRulePair(cand, other);
+      if(J > maxJ)
+         maxJ = J;
+     }
+
+   if(maxJ < 0.0)
+      maxJ = 0.0;
+   if(maxJ > 1.0)
+      maxJ = 1.0;
+
+// Diversidad = 1 - máximo solapamiento J
+   return(1.0 - maxJ);
+  }
+
+
+//-------------------------------------------------------------------
+// Calcula un "SharpeScore" para una regla:
+// - Usa retornos de la regla (CollectRuleReturns)
+// - Los firma según rule.side
+// - Calcula Sharpe global
+// - Divide en InpSharpeNumWindows ventanas y calcula:
+//     * Sharpe por ventana
+//     * peor Sharpe (worst)
+//     * dispersión de los Sharpe (stdSharpe)
+// - Combina todo en un score: más alto = mejor
+//-------------------------------------------------------------------
+double ComputeSharpeScoreForRule(const RuleInfo &rule)
+  {
+   double retList[];
+   CollectRuleReturns(rule, retList);
+
+   int n = ArraySize(retList);
+   if(n <= 1)
+      return(-1.0e100); // prácticamente "muy malo"
+
+// Retornos firmados (BUY y SELL comparables)
+   double signedR[];
+   ArrayResize(signedR, n);
+   for(int i=0; i<n; i++)
+      signedR[i] = rule.side * retList[i];
+
+// Sharpe global
+   double sum = 0.0;
+   for(int i=0; i<n; i++)
+      sum += signedR[i];
+   double mean = sum / (double)n;
+
+   double var = 0.0;
+   for(int i=0; i<n; i++)
+     {
+      double d = signedR[i] - mean;
+      var += d * d;
+     }
+
+   if(var <= 0.0)
+      return(-1.0e100); // sin varianza → no nos interesa para ranking
+
+   double stddev       = MathSqrt(var / (double)(n - 1));
+   double globalSharpe = mean / stddev;
+
+// Nº de ventanas efectivo
+   int W = InpSharpeNumWindows;
+   if(W < 1)
+      W = 1;
+   if(W > n)
+      W = n;
+
+   double winSharpe[];
+   ArrayResize(winSharpe, W);
+
+// Reparto casi uniforme de trades entre ventanas [start, end)
+   for(int w=0; w<W; w++)
+     {
+      int start = (w    * n) / W;
+      int end   = ((w+1) * n) / W;
+      int len   = end - start;
+
+      if(len <= 1)
+        {
+         // Ventana demasiado pequeña -> usamos Sharpe global como aproximación
+         winSharpe[w] = globalSharpe;
+         continue;
+        }
+
+      double s = 0.0;
+      for(int i=start; i<end; i++)
+         s += signedR[i];
+      double m = s / (double)len;
+
+      double v = 0.0;
+      for(int i=start; i<end; i++)
+        {
+         double d = signedR[i] - m;
+         v += d * d;
+        }
+
+      if(v <= 0.0)
+        {
+         winSharpe[w] = globalSharpe;
+         continue;
+        }
+
+      double sd = MathSqrt(v / (double)(len - 1));
+      winSharpe[w] = m / sd;
+     }
+
+// Peor Sharpe de ventana y dispersión de los Sharpe
+   double worst = winSharpe[0];
+   double sumW  = 0.0;
+   for(int w=0; w<W; w++)
+     {
+      if(winSharpe[w] < worst)
+         worst = winSharpe[w];
+      sumW += winSharpe[w];
+     }
+
+   double meanSharpeWin = sumW / (double)W;
+
+   double varSharpeWin = 0.0;
+   for(int w=0; w<W; w++)
+     {
+      double d = winSharpe[w] - meanSharpeWin;
+      varSharpeWin += d * d;
+     }
+
+   double stdSharpe = (W > 1 ? MathSqrt(varSharpeWin / (double)(W - 1)) : 0.0);
+
+// Combinar en un único score:
+// - globalSharpe: motor principal
+// - worst: penaliza reglas con una ventana muy mala
+// - stdSharpe: penaliza inestabilidad entre ventanas
+   double score = globalSharpe + 0.5 * worst - 0.5 * stdSharpe;
+
+   return(score);
+  }
+
+
+//------------------------------
+// Helper: comprueba si la regla (univ o combo) está activa en el trainable-index k
+//   - usa la misma lógica binLow/binHigh que CollectRuleReturns / BuildRuleActivationMask
+//------------------------------
+bool RuleMatchesAtK(const RuleInfo &rule, const int k)
+  {
+   if(k < 0 || k >= g_numTrainable)
+      return(false);
+
+   int rowFeature = g_trainIndex[k];
+   int rowTarget  = rowFeature + 1;
+   if(rowTarget >= g_rows)
+      return(false);
+
+   double t = g_target[rowTarget];
+   if(t == EMPTY_VALUE || !MathIsValidNumber(t))
+      return(false);
+
+   int f1 = rule.featureIndex;
+   if(f1 < 0 || f1 >= g_numFeatures)
+      return(false);
+
+   double v1 = g_features[rowFeature * g_numFeatures + f1];
+   if(v1 == EMPTY_VALUE || !MathIsValidNumber(v1))
+      return(false);
+
+   bool match1;
+   if(rule.binIndex < InpNumBins - 1)
+      match1 = (v1 >= rule.binLow && v1 < rule.binHigh);
+   else
+      match1 = (v1 >= rule.binLow);
+
+   if(!match1)
+      return(false);
+
+   if(rule.isCombo)
+     {
+      int f2 = rule.featureIndex2;
+      if(f2 < 0 || f2 >= g_numFeatures)
+         return(false);
+
+      double v2 = g_features[rowFeature * g_numFeatures + f2];
+      if(v2 == EMPTY_VALUE || !MathIsValidNumber(v2))
+         return(false);
+
+      bool match2;
+      if(rule.binIndex2 < InpNumBins - 1)
+         match2 = (v2 >= rule.binLow2 && v2 < rule.binHigh2);
+      else
+         match2 = (v2 >= rule.binLow2);
+
+      if(!match2)
+         return(false);
+     }
+
+   return(true);
+  }
+
+
+//------------------------------
+// Helper: cuantíl y pvalue (cola derecha) sobre scores[]
+//   - pvalue = frac(scores >= ruleValue)
+//------------------------------
+void ComputeQuantileAndPValue(const double &scores[],
+                              const double ruleValue,
+                              const double pQuant,
+                              double &outQuantile,
+                              double &outPValue)
+  {
+   int n = ArraySize(scores);
+   if(n <= 0)
+     {
+      outQuantile = 0.0;
+      outPValue   = 1.0;
+      return;
+     }
+
+   double sorted[];
+   ArrayResize(sorted, n);
+   ArrayCopy(sorted, scores);
+   ArraySort(sorted);
+
+   if(pQuant <= 0.0)
+      outQuantile = sorted[0];
+   else
+      if(pQuant >= 1.0)
+         outQuantile = sorted[n-1];
+      else
+        {
+         double pos = (n - 1) * pQuant;
+         int i0 = (int)MathFloor(pos);
+         int i1 = i0 + 1;
+         if(i1 >= n)
+            i1 = n-1;
+         double frac = pos - i0;
+         outQuantile = sorted[i0] + (sorted[i1] - sorted[i0]) * frac;
+        }
+
+   int ge = 0;
+   for(int i=0; i<n; i++)
+     {
+      if(scores[i] >= ruleValue)
+         ge++;
+     }
+
+   outPValue = (double)ge / (double)n;
+  }
+
+//------------------------------
+// Devuelve lista de k (trainable-index) donde la regla está activa (orden temporal)
+//------------------------------
+bool BuildRuleActiveKList(const RuleInfo &rule, int &kList[])
+  {
+   ArrayResize(kList, 0);
+
+   for(int k=0; k<g_numTrainable; k++)
+     {
+      if(RuleMatchesAtK(rule, k))
+        {
+         int pos = ArraySize(kList);
+         ArrayResize(kList, pos+1);
+         kList[pos] = k;
+        }
+     }
+
+   return(ArraySize(kList) > 0);
+  }
+
+//------------------------------
+// Aplica InpMonkeyDatasetFraction sobre la lista de k (cola temporal de trades de la regla)
+//------------------------------
+bool BuildRuleKSubsampleTail(const int &kList[], const int nTotal, int &subKs[])
+  {
+   ArrayResize(subKs, 0);
+   if(nTotal <= 0)
+      return(false);
+
+   double frac = InpMonkeyDatasetFraction;
+   if(frac <= 0.0)
+      frac = 1.0;
+   if(frac > 1.0)
+      frac = 1.0;
+
+   int used = (int)MathFloor((double)nTotal * frac);
+   if(used <= 0)
+      used = nTotal;
+   if(used > nTotal)
+      used = nTotal;
+
+   int startIdx = nTotal - used;
+
+   ArrayResize(subKs, used);
+   for(int i=0; i<used; i++)
+      subKs[i] = kList[startIdx + i];
+
+   return(ArraySize(subKs) > 0);
+  }
+
+//------------------------------
+// Construye ventana contigua [startK..endK] a partir de subKs (primer y último trade usado),
+// y precarga los retornos de esa ventana en retWin[] (índice 0..len-1).
+//------------------------------
+bool BuildReturnWindowFromKSpan(const int &subKs[], double &retWin[],
+                                int &startK, int &len)
+  {
+   ArrayResize(retWin, 0);
+   startK = 0;
+   len    = 0;
+
+   int n = ArraySize(subKs);
+   if(n <= 0)
+      return(false);
+
+   int endK = subKs[n-1];
+   startK   = subKs[0];
+
+   if(startK < 0)
+      startK = 0;
+   if(endK >= g_numTrainable)
+      endK = g_numTrainable - 1;
+
+   len = endK - startK + 1;
+   if(len <= 1)
+      return(false);
+
+   ArrayResize(retWin, len);
+
+   for(int i=0; i<len; i++)
+     {
+      int k = startK + i;
+
+      int rowFeature = g_trainIndex[k];
+      int rowTarget  = rowFeature + 1;
+
+      double t = EMPTY_VALUE;
+      if(rowTarget >= 0 && rowTarget < g_rows)
+         t = g_target[rowTarget];
+
+      // g_trainIndex ya garantiza target válido, pero por seguridad:
+      if(t == EMPTY_VALUE || !MathIsValidNumber(t))
+         t = 0.0;
+
+      retWin[i] = t;
+     }
+
+   return(true);
+  }
+
+//------------------------------
+// MODO 5: MONKEY_CIRCULAR_SHIFT
+// - Patrón = offsets de los trades reales (subKs) dentro de una ventana contigua
+// - Cada mono desplaza circularmente el patrón dentro de la ventana
+// - Lado SIEMPRE = rule.side
+// - Métrica = media firmada (igual escala que tus otros modos)
+//------------------------------
+void RunMonkeySimulationForRule_CircularShift(const RuleInfo &rule,
+      double &outQuantile,
+      double &outPValue)
+  {
+   outQuantile = 0.0;
+   outPValue   = 1.0;
+
+// 1) Lista completa de trades (k) de la regla
+   int kList[];
+   if(!BuildRuleActiveKList(rule, kList))
+      return;
+
+// 2) Cola temporal de trades (según InpMonkeyDatasetFraction)
+   int subKs[];
+   if(!BuildRuleKSubsampleTail(kList, ArraySize(kList), subKs))
+      return;
+
+   int nTrades = ArraySize(subKs);
+   if(nTrades <= 0)
+      return;
+
+// 3) Ventana contigua para hacer el shift
+   double retWin[];
+   int startK, winLen;
+   if(!BuildReturnWindowFromKSpan(subKs, retWin, startK, winLen))
+      return;
+
+// 4) Offsets del patrón (posiciones dentro de la ventana)
+   int offsets[];
+   ArrayResize(offsets, nTrades);
+   for(int i=0; i<nTrades; i++)
+      offsets[i] = subKs[i] - startK; // 0..winLen-1
+
+// 5) Valor real de la regla (media firmada en su patrón real)
+   double sumRule = 0.0;
+   for(int i=0; i<nTrades; i++)
+      sumRule += (double)rule.side * retWin[offsets[i]];
+
+   double ruleMeanSigned = sumRule / (double)nTrades;
+
+// 6) Simulación de monos: shift circular dentro de [0..winLen-1]
+   double monkeyScores[];
+   ArrayResize(monkeyScores, InpNumMonkeys);
+
+   for(int m=0; m<InpNumMonkeys; m++)
+     {
+      // Evitar shift=0 para no meter la propia regla en la distribución (si winLen>1)
+      int shift = 0;
+      if(winLen > 1)
+         shift = 1 + (MathRand() % (winLen - 1));
+
+      double sumM = 0.0;
+      for(int i=0; i<nTrades; i++)
+        {
+         int idx = offsets[i] + shift;
+         idx %= winLen;
+         sumM += (double)rule.side * retWin[idx];
+        }
+
+      monkeyScores[m] = sumM / (double)nTrades;
+     }
+
+// 7) Cuantíl y p-valor (cola derecha): p = frac(monkeys >= rule)
+   ComputeQuantileAndPValue(monkeyScores, ruleMeanSigned,
+                            InpMonkeyPercentile,
+                            outQuantile, outPValue);
+
+   if(InpVerboseMonkeyLogs)
+     {
+      PrintFormat("CIRC_SHIFT_MONKEY: %s | trades=%d | windowLen=%d | ruleMeanSigned=%.6f | q=%.6f | p=%.6f",
+                  DescribeRuleShort(rule),
+                  nTrades, winLen,
+                  ruleMeanSigned,
+                  outQuantile, outPValue);
+     }
+  }
+
+
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+void RunMonkeySimulationForRule(const RuleInfo &rule,
+                                double &outQuantile,
+                                double &outPValue)
+  {
+   outQuantile = 0.0;
+   outPValue   = 1.0;
+
+// MONKEY normal (grupo "VALIDATION - Monkey Test"):
+// por diseño SOLO usamos MONKEY_CIRCULAR_SHIFT.
+// SuperMonkey es una etapa aparte con sus propios inputs y su propia función.
+   RunMonkeySimulationForRule_CircularShift(rule, outQuantile, outPValue);
+  }
+
+
+//------------------------------
+// RNG 32-bit a partir de MathRand() (mejor que 15-bit)
+//------------------------------
+uint Rand32()
+  {
+   uint a = (uint)MathRand();
+   uint b = (uint)MathRand();
+   return ((a << 15) ^ b);
+  }
+
+//------------------------------
+// Extrae el target en el eje "k" (trainable index)
+// vec[k] = g_target[rowTarget] donde rowTarget = g_trainIndex[k]+1
+//------------------------------
+void ExtractTargetVecOnTrainable(double &vec[])
+  {
+   int N = g_numTrainable;
+   ArrayResize(vec, N);
+   for(int k=0; k<N; k++)
+     {
+      int rowFeature = g_trainIndex[k];
+      int rowTarget  = rowFeature + 1;
+      vec[k] = g_target[rowTarget];
+     }
+  }
+
+//------------------------------
+// Restaura el target desde vec[] al eje trainable
+//------------------------------
+void RestoreTargetVecOnTrainable(const double &vec[])
+  {
+   int N = g_numTrainable;
+   int nVec = ArraySize(vec);
+   if(nVec != N)
+      return;
+
+   for(int k=0; k<N; k++)
+     {
+      int rowTarget = g_trainIndex[k] + 1;
+      g_target[rowTarget] = vec[k];
+     }
+  }
+
+//------------------------------
+// Aplica circular shift al target en el eje trainable (shift != 0)
+// g_target[rowTarget(k)] = vec[(k+shift)%N]
+//------------------------------
+void ApplyShiftedTargetOnTrainable(const double &vec[], const int shift)
+  {
+   int N = g_numTrainable;
+   int nVec = ArraySize(vec);
+   if(nVec != N || N <= 1)
+      return;
+
+   int sh = shift % N;
+   if(sh < 0)
+      sh += N;
+   if(sh == 0)
+      sh = 1;
+
+   for(int k=0; k<N; k++)
+     {
+      int src = k + sh;
+      if(src >= N)
+         src -= N;
+
+      int rowTarget = g_trainIndex[k] + 1;
+      g_target[rowTarget] = vec[src];
+     }
+  }
+
+//------------------------------
+// Métrica del super-mono (v1): mejor meanRet (magnitud) de las reglas encontradas
+// OJO: meanRet en tus rules ya es magnitud positiva para LONG y SHORT.
+//------------------------------
+double GetBestMeanRetFromCurrentRules()
+  {
+   int n = ArraySize(g_rules);
+   double best = 0.0;
+   for(int i=0; i<n; i++)
+     {
+      double v = g_rules[i].meanRet;
+      if(MathIsValidNumber(v) && v > best)
+         best = v;
+     }
+   return(best);
+  }
+
+
+//------------------------------
+// Ejecuta el pipeline completo HASTA DESPUÉS del filtro sintético (sin Jaccard)
+// y devuelve el mejor score (aquí: best meanRet).
+//  Etapas incluidas:
+//    - TrainOneR_TopK
+//    - GeneratePairwiseAndCombinationsFromRules
+//    - ApplyMonkeyFilterToRules (si está activado)
+//    - ApplySharpeRankingToRules (si está activado)
+//    - ApplySyntheticStabilityFilterToRules (si está activado)
+//
+// worldSeed: semilla base por mundo para "desacoplar" la aleatoriedad entre mundos.
+//------------------------------
+double LuckFilter_RunPipelineUpToSynthetic_BestMeanRet(const uint worldSeed)
+  {
+// OJO: esto pisa g_rules
+   ArrayResize(g_rules, 0);
+
+   if(!TrainOneR_TopK())
+      return(0.0);
+
+   if(InpRuleFamilyMode == RULE_FAMILY_BIVARIATE_COMBOS_ONLY)
+     {
+      int baseN = ArraySize(g_rules);
+      GeneratePairwiseAndCombinationsFromRules();
+      int nAfter  = ArraySize(g_rules);
+      int combosN = nAfter - baseN;
+      if(combosN <= 0)
+         return(0.0);
+
+      RuleInfo onlyCombos[];
+      ArrayResize(onlyCombos, combosN);
+      for(int i=0;i<combosN;i++)
+         onlyCombos[i] = g_rules[baseN + i];
+
+      ArrayResize(g_rules, combosN);
+      for(int i=0;i<combosN;i++)
+         g_rules[i] = onlyCombos[i];
+     }
+
+
+
+// Monkey per-regla (si está ON)
+   if(InpUseMonkeyFilter)
+     {
+      // Semilla por-mundo (sin sufijos 'u' y con constantes seguras)
+      MathSrand((int)(worldSeed ^ (uint)InpMonkeySeed ^ 0x00C0FFEE));
+      ApplyMonkeyFilterToRules();
+     }
+
+   if(ArraySize(g_rules) <= 0)
+      return(0.0);
+
+// Ranking Sharpe (solo ordena si InpUseSharpeFilter=true)
+   ApplySharpeRankingToRules();
+
+// Sintético (si está ON)
+   if(InpUseSyntheticFilter)
+     {
+      MathSrand((int)(worldSeed ^ (uint)InpSyntheticSeed ^ 0x0BADBEEF));
+      ApplySyntheticStabilityFilterToRules();
+     }
+
+   if(ArraySize(g_rules) <= 0)
+      return(0.0);
+
+// Métrica final del pipeline (misma que tu SuperMonkey original)
+   return(GetBestMeanRetFromCurrentRules());
+  }
+
+//------------------------------
+// Construye distribución bestScores[] del LuckFilter (mundos nulos)
+// Cada mundo:
+//   - shift aleatorio != 0 del target en el eje trainable
+//   - corre pipeline completo hasta DESPUÉS del sintético (sin Jaccard)
+//   - guarda bestScore de ese mundo
+//------------------------------
+bool BuildLuckFilterBestScores(const int worlds, double &bestScores[])
+  {
+   int N = g_numTrainable;
+   if(N <= 10 || worlds <= 0)
+      return(false);
+
+// snapshot target original (en eje trainable)
+   double target0[];
+   ExtractTargetVecOnTrainable(target0);
+
+   ArrayResize(bestScores, worlds);
+
+   for(int w=0; w<worlds; w++)
+     {
+      // Semilla por mundo (LCG simple y compilable)
+      // worldSeed = seed + (w+1)*1664525 + 1013904223   (ambas < 2^31)
+      uint worldSeed = (uint)InpLuckFilterSeed;
+      worldSeed = worldSeed + (uint)(w + 1) * 1664525 + 1013904223;
+
+      MathSrand((int)worldSeed);
+
+      // shift aleatorio distinto de 0
+      int shift = 1;
+      if(N > 1)
+         shift = 1 + (int)(Rand32() % (uint)(N - 1));
+
+      ApplyShiftedTargetOnTrainable(target0, shift);
+
+      // corre pipeline y guarda bestScore del mundo nulo
+      bestScores[w] = LuckFilter_RunPipelineUpToSynthetic_BestMeanRet(worldSeed);
+     }
+
+// restaurar target original
+   RestoreTargetVecOnTrainable(target0);
+
+   return(true);
+  }
+
+//===================================================================
+// LUCKFILTER (VALIDACIÓN GLOBAL DEL PIPELINE HASTA SINTÉTICO)
+// Devuelve:
+//   true  -> pasa (o está desactivado)
+//   false -> NO pasa (o error al construir la nula)
+//===================================================================
+bool LuckFilter_ValidatePipelineOnly()
+  {
+   if(!InpUseLuckFilter)
+      return(true);
+
+   if(InpLuckFilterWorlds <= 0)
+     {
+      Print("LuckFilter(validation): worlds<=0 -> no se ejecuta (se considera PASS).");
+      return(true);
+     }
+
+// Si no hay reglas, no tiene sentido validar: deja que el flujo normal lo gestione.
+   int nRulesNow = ArraySize(g_rules);
+   if(nRulesNow <= 0)
+      return(true);
+
+// Snapshot de reglas actuales (porque BuildLuckFilterBestScores pisa g_rules)
+   RuleInfo snapshot[];
+   ArrayResize(snapshot, nRulesNow);
+   for(int i=0; i<nRulesNow; i++)
+      snapshot[i] = g_rules[i];
+
+// bestScore REAL = mejor meanRet actual (post-sintético, pre-Jaccard)
+   double bestScoreReal = GetBestMeanRetFromCurrentRules();
+
+// Distribución nula
+   double bestScores[];
+   bool ok = BuildLuckFilterBestScores(InpLuckFilterWorlds, bestScores);
+
+// Restaurar reglas reales SIEMPRE
+   ArrayResize(g_rules, nRulesNow);
+   for(int i=0; i<nRulesNow; i++)
+      g_rules[i] = snapshot[i];
+
+   if(!ok)
+     {
+      Print("ERROR: LuckFilter(validation) no pudo construir distribución nula -> FAIL.");
+      return(false);
+     }
+
+   double pQuant = InpLuckFilterPercentile;
+   if(pQuant < 0.0)
+      pQuant = 0.0;
+   if(pQuant > 1.0)
+      pQuant = 1.0;
+
+   double alpha = 1.0 - pQuant;
+
+   double qNull = ComputeQuantileFromScores(bestScores, pQuant);
+   double pVal  = RightTailPValue(bestScores, bestScoreReal);
+
+   bool pass = (pVal <= alpha);
+
+   Print("============================================");
+   PrintFormat("LuckFilter(validation): worlds=%d | percentile=%.2f | bestScoreReal=%.6f | qNull(bestScore)=%.6f | p=%.6f | pass(p<=alpha=%.3f)=%s",
+               InpLuckFilterWorlds,
+               pQuant,
+               bestScoreReal,
+               qNull,
+               pVal,
+               alpha,
+               (pass ? "YES" : "NO"));
+
+   if(!InpLuckFilterSilent)
+     {
+      int W = ArraySize(bestScores);
+      double mn =  1e100, mx = -1e100, sum = 0.0, sumsq = 0.0;
+      for(int i=0; i<W; i++)
+        {
+         double v = bestScores[i];
+         if(v < mn)
+            mn = v;
+         if(v > mx)
+            mx = v;
+         sum   += v;
+         sumsq += v*v;
+        }
+
+      double mean = sum / (double)W;
+      double var  = (sumsq / (double)W) - mean*mean;
+      if(var < 0.0)
+         var = 0.0;
+      double sd = MathSqrt(var);
+
+      PrintFormat("LuckFilter(validation): null mean=%.6f sd=%.6f min=%.6f max=%.6f",
+                  mean, sd, mn, mx);
+     }
+
+   return(pass);
+  }
+
+
+
+//------------------------------
+// Cuantíl (con interpolación) de un array
+//------------------------------
+double ComputeQuantileFromScores(const double &scores[], const double pQuant)
+  {
+   int n = ArraySize(scores);
+   if(n <= 0)
+      return(0.0);
+
+   double sorted[];
+   ArrayResize(sorted, n);
+   ArrayCopy(sorted, scores);
+   ArraySort(sorted);
+
+   if(pQuant <= 0.0)
+      return(sorted[0]);
+   if(pQuant >= 1.0)
+      return(sorted[n-1]);
+
+   double pos = (n - 1) * pQuant;
+   int i0 = (int)MathFloor(pos);
+   int i1 = i0 + 1;
+   if(i1 >= n)
+      i1 = n - 1;
+   double frac = pos - i0;
+
+   return(sorted[i0] + (sorted[i1] - sorted[i0]) * frac);
+  }
+
+//------------------------------
+// p-value cola derecha: frac(scores >= value)
+//------------------------------
+double RightTailPValue(const double &scores[], const double value)
+  {
+   int n = ArraySize(scores);
+   if(n <= 0)
+      return(1.0);
+
+   int ge = 0;
+   for(int i=0; i<n; i++)
+     {
+      if(scores[i] >= value)
+         ge++;
+     }
+   return((double)ge / (double)n);
+  }
+
+//===================================================================
+// Aplica Monkey Test a cada regla y filtra (SIEMPRE per-rule circular shift)
+//===================================================================
+void ApplyMonkeyFilterToRules()
+  {
+   int n = ArraySize(g_rules);
+   if(n <= 0 || !InpUseMonkeyFilter)
+      return;
+
+   double alpha = 1.0 - InpMonkeyPercentile; // p-valor máximo permitido
+
+   RuleInfo filtered[];
+   ArrayResize(filtered, 0);
+
+   if(InpVerboseMonkeyLogs)
+     {
+      Print("============================================");
+      PrintFormat("MonkeyTest (per-rule CIRCULAR_SHIFT): evaluando %d reglas | monkeys=%d | percentile=%.2f | alpha=%.3f",
+                  n, InpNumMonkeys, InpMonkeyPercentile, alpha);
+     }
+
+   for(int r=0; r<n; r++)
+     {
+      RuleInfo rule = g_rules[r];
+
+      double q = 0.0;
+      double p = 1.0;
+
+      // OJO: llamamos directo al circular shift para no depender de InpMonkeyMode
+      RunMonkeySimulationForRule_CircularShift(rule, q, p);
+
+      rule.monkeyQuantile = q;
+      rule.monkeyPValue   = p;
+
+      if(p <= alpha)
+        {
+         int pos = ArraySize(filtered);
+         ArrayResize(filtered, pos + 1);
+         filtered[pos] = rule;
+        }
+     }
+
+   int kept = ArraySize(filtered);
+
+   Print("============================================");
+   PrintFormat("Reglas aceptadas tras Monkey Filter (per-rule): %d (de %d)", kept, n);
+
+   ArrayResize(g_rules, kept);
+   for(int i=0; i<kept; i++)
+      g_rules[i] = filtered[i];
+  }
+
+
+//===================================================================
+// Comprueba si una regla es estable en mundos sintéticos
+//===================================================================
+bool RulePassesSyntheticStability(const RuleInfo &rule)
+  {
+   double ruleRets[];
+   CollectRuleReturns(rule, ruleRets);
+
+   int n = ArraySize(ruleRets);
+   if(n <= 0)
+     {
+      PrintFormat("SyntheticFilter: regla %s sin retornos → rechazada",
+                  DescribeRuleShort(rule));
+      return(false);
+     }
+
+// media "real" de la regla (sin signo)
+   double sumReal = 0.0;
+   for(int i=0; i<n; i++)
+      sumReal += ruleRets[i];
+   double meanRawReal    = sumReal / (double)n;
+   double meanRealSigned = rule.side * meanRawReal;
+
+   if(MathAbs(meanRealSigned) < 1e-12)
+     {
+      PrintFormat("SyntheticFilter: regla %s con mean≈0 → poco informativa, se rechaza",
+                  DescribeRuleShort(rule));
+      return(false);
+     }
+
+// copiar base
+   double base_ret[];
+   ArrayResize(base_ret, n);
+   for(int i=0; i<n; i++)
+      base_ret[i] = ruleRets[i];
+
+   int maxLag = InpACFMaxLagSynth;
+   if(maxLag > n - 5)
+      maxLag = n - 5;
+   if(maxLag < 1)
+      maxLag = 1;
+
+// mundos sintéticos
+   for(int w=0; w<InpNumSyntheticWorlds; w++)
+     {
+      bool   world_ok = false;
+      double syn_ret[];
+      ArrayResize(syn_ret, n);
+
+      for(int attempt=1; attempt<=InpMaxSynthAttempts; attempt++)
+        {
+         GenerateHybridBootstrap1D(base_ret, n, syn_ret, n, InpSynthKeepPercentage);
+
+         double ks_score, acf_ret_score, acf_sq_score;
+         EvaluateReturnSeriesSimilarity(base_ret, n,
+                                        syn_ret,  n,
+                                        maxLag,
+                                        ks_score,
+                                        acf_ret_score,
+                                        acf_sq_score);
+
+         if(InpVerboseSyntheticLogs)
+           {
+            PrintFormat("SyntheticFilter: %s mundo=%d intento=%d | KS=%.3f(>=%.3f) ACF=%.3f(>=%.3f) ACF2=%.3f(>=%.3f)",
+                        DescribeRuleShort(rule),
+                        w+1, attempt,
+                        ks_score,      InpMinKSSim,
+                        acf_ret_score, InpMinACFSim,
+                        acf_sq_score,  InpMinACFSqSim);
+           }
+
+
+         if(ks_score >= InpMinKSSim &&
+            acf_ret_score >= InpMinACFSim &&
+            acf_sq_score >= InpMinACFSqSim)
+           {
+            world_ok = true;
+            break;
+           }
+        }
+
+      if(!world_ok)
+        {
+         if(InpVerboseSyntheticLogs)
+           {
+            PrintFormat("SyntheticFilter: %s mundo=%d no cumple similitud tras %d intentos → rechazada",
+                        DescribeRuleShort(rule),
+                        w+1,
+                        InpMaxSynthAttempts);
+           }
+         return(false);
+        }
+
+      // comprobar desviación de la media en este mundo
+      double sumSyn = 0.0;
+      for(int i=0; i<n; i++)
+         sumSyn += syn_ret[i];
+      double meanRawSyn    = sumSyn / (double)n;
+      double meanSynSigned = rule.side * meanRawSyn;
+
+      double baseline = MathAbs(meanRealSigned);
+      double diff     = MathAbs(meanSynSigned - meanRealSigned);
+      double maxDiff  = baseline * InpMaxDeviationRatio;
+
+      if(InpVerboseSyntheticLogs)
+        {
+         PrintFormat("SyntheticFilter: %s mundo=%d | meanReal=%.6f meanSyn=%.6f diff=%.6f maxDiff=%.6f",
+                     DescribeRuleShort(rule),
+                     w+1,
+                     meanRealSigned, meanSynSigned, diff, maxDiff);
+        }
+
+
+      if(diff > maxDiff)
+        {
+         if(InpVerboseSyntheticLogs)
+           {
+            PrintFormat("SyntheticFilter: %s rechazada por inestabilidad (mundo=%d).",
+                        DescribeRuleShort(rule),
+                        w+1);
+           }
+
+         return(false);
+        }
+     }
+
+   if(InpVerboseSyntheticLogs)
+     {
+      PrintFormat("SyntheticFilter: %s aceptada tras %d mundos sintéticos.",
+                  DescribeRuleShort(rule),
+                  InpNumSyntheticWorlds);
+     }
+
+   return(true);
+  }
+
+
+//-------------------------------------------------------------------
+// Aplica filtro de estabilidad sintética a todas las reglas
+//-------------------------------------------------------------------
+void ApplySyntheticStabilityFilterToRules()
+  {
+   int n = ArraySize(g_rules);
+   if(n <= 0 || !InpUseSyntheticFilter)
+      return;
+
+   RuleInfo filtered[];
+   ArrayResize(filtered, 0);
+
+   Print("============================================");
+   PrintFormat("SyntheticFilter: evaluando estabilidad sintética para %d reglas", n);
+
+   for(int r=0; r<n; r++)
+     {
+      RuleInfo rule = g_rules[r];
+      if(RulePassesSyntheticStability(rule))
+        {
+         int pos = ArraySize(filtered);
+         ArrayResize(filtered, pos + 1);
+         filtered[pos] = rule;
+        }
+     }
+
+   int kept = ArraySize(filtered);
+   PrintFormat("SyntheticFilter: reglas aceptadas tras filtro sintético: %d (de %d)", kept, n);
+
+   ArrayResize(g_rules, kept);
+   for(int i=0; i<kept; i++)
+      g_rules[i] = filtered[i];
+  }
+
+//-------------------------------------------------------------------
+// Forzar que las reglas finales sean simétricas LONG/SHORT
+// Si InpNumRulesToSelect = K > 0 y hay suficientes reglas de ambos lados,
+// se dejan exactamente K_final = 2 * pairs reglas:
+//   pairs = min(K/2, nºLONG, nºSHORT)
+// y se escogen las mejores (orden actual de g_rules, ya ordenado por Sharpe).
+//-------------------------------------------------------------------
+void EnforceSymmetricFinalRules()
+  {
+   int nRules = ArraySize(g_rules);
+   if(nRules <= 0)
+      return;
+
+// Solo aplicamos si el usuario ha pedido un K concreto (>0)
+   if(InpNumRulesToSelect <= 0)
+      return;
+
+// K pedido, acotado por el nº de reglas disponibles
+   int K_req = InpNumRulesToSelect;
+   if(K_req > nRules)
+      K_req = nRules;
+
+// Necesitamos K par (misma cantidad LONG/SHORT)
+   if((K_req % 2) != 0)
+     {
+      K_req -= 1;
+      if(K_req <= 0)
+         return;
+
+      PrintFormat("BalanceSymmetry: InpNumRulesToSelect impar (%d) → se ajusta a K=%d para simetría.",
+                  InpNumRulesToSelect, K_req);
+     }
+
+// Contar LONG / SHORT disponibles
+   int totalLong  = 0;
+   int totalShort = 0;
+   for(int i=0; i<nRules; i++)
+     {
+      if(g_rules[i].side > 0)
+         totalLong++;
+      else
+         if(g_rules[i].side < 0)
+            totalShort++;
+     }
+
+// Si solo hay un lado, no podemos balancear
+   if(totalLong == 0 || totalShort == 0)
+     {
+      PrintFormat("BalanceSymmetry: no se puede forzar simetría (LONG=%d, SHORT=%d). Se mantiene selección previa.",
+                  totalLong, totalShort);
+      return;
+     }
+
+// nº de pares LONG/SHORT que podemos formar
+   int maxPairsByData = (totalLong < totalShort ? totalLong : totalShort);
+   int maxPairsByK    = K_req / 2;
+   int pairs          = (maxPairsByData < maxPairsByK ? maxPairsByData : maxPairsByK);
+
+   if(pairs <= 0)
+      return;
+
+   int K_final = pairs * 2;
+
+   RuleInfo balanced[];
+   ArrayResize(balanced, 0);
+
+   int usedLong  = 0;
+   int usedShort = 0;
+
+// g_rules ya viene ordenado por Sharpe → recorremos en orden
+// y nos quedamos con los primeros 'pairs' LONG y 'pairs' SHORT.
+   for(int i=0; i<nRules && (usedLong < pairs || usedShort < pairs); i++)
+     {
+      if(g_rules[i].side > 0 && usedLong < pairs)
+        {
+         int pos = ArraySize(balanced);
+         ArrayResize(balanced, pos + 1);
+         balanced[pos] = g_rules[i];
+         usedLong++;
+        }
+      else
+         if(g_rules[i].side < 0 && usedShort < pairs)
+           {
+            int pos = ArraySize(balanced);
+            ArrayResize(balanced, pos + 1);
+            balanced[pos] = g_rules[i];
+            usedShort++;
+           }
+     }
+
+   int got = ArraySize(balanced);
+   if(got <= 0)
+      return;
+
+   ArrayResize(g_rules, got);
+   for(int i=0; i<got; i++)
+      g_rules[i] = balanced[i];
+
+   PrintFormat("BalanceSymmetry: selección simétrica aplicada → total=%d (LONG=%d, SHORT=%d).",
+               got, usedLong, usedShort);
+  }
+
+//-------------------------------------------------------------------
+// Reordena g_rules según SharpeScore (descendente).
+// Si InpUseSharpeFilter=false, no toca el orden (sigue por meanRet).
+//-------------------------------------------------------------------
+void ApplySharpeRankingToRules()
+  {
+   if(!InpUseSharpeFilter)
+      return;
+
+   int n = ArraySize(g_rules);
+   if(n <= 1)
+      return;
+
+   double scores[];
+   ArrayResize(scores, n);
+
+// Calcular score por regla
+   for(int i=0; i<n; i++)
+      scores[i] = ComputeSharpeScoreForRule(g_rules[i]);
+
+// Ordenar descendente por scores, manteniendo g_rules en paralelo
+   for(int i=0; i<n-1; i++)
+     {
+      for(int j=0; j<n-1-i; j++)
+        {
+         if(scores[j] < scores[j+1])
+           {
+            double   tmpScore = scores[j];
+            scores[j]         = scores[j+1];
+            scores[j+1]       = tmpScore;
+
+            RuleInfo tmpRule  = g_rules[j];
+            g_rules[j]        = g_rules[j+1];
+            g_rules[j+1]      = tmpRule;
+           }
+        }
+     }
+  }
+
+//-------------------------------------------------------------------
+// Filtro por score mínimo (SharpeScore):
+//   - Solo tiene sentido si InpUseSharpeFilter = true.
+//   - Elimina reglas cuyo score < InpMinRuleScore.
+//-------------------------------------------------------------------
+void ApplyMinScoreFilterToRules()
+  {
+   if(!InpUseSharpeFilter)
+      return;
+
+// 0 o negativo = sin filtro práctico
+   if(InpMinRuleScore <= 0.0)
+      return;
+
+   int n = ArraySize(g_rules);
+   if(n <= 0)
+      return;
+
+   RuleInfo filtered[];
+   ArrayResize(filtered, 0);
+
+   for(int i=0; i<n; i++)
+     {
+      double score = ComputeSharpeScoreForRule(g_rules[i]);
+
+      if(score >= InpMinRuleScore)
+        {
+         int pos = ArraySize(filtered);
+         ArrayResize(filtered, pos + 1);
+         filtered[pos] = g_rules[i];
+        }
+     }
+
+   int kept = ArraySize(filtered);
+
+// NUEVO: contar LONG/SHORT dentro de las aceptadas
+   int longCnt = 0;
+   int shortCnt = 0;
+   for(int i=0; i<kept; i++)
+     {
+      if(filtered[i].side > 0)
+         longCnt++;
+      else
+         if(filtered[i].side < 0)
+            shortCnt++;
+     }
+
+   Print("============================================");
+   PrintFormat("MinScoreFilter: reglas aceptadas con score >= %.6f: %d (de %d). De las %d hay LONG=%d, SHORT=%d.",
+               InpMinRuleScore, kept, n, kept, longCnt, shortCnt);
+
+   ArrayResize(g_rules, kept);
+   for(int i=0; i<kept; i++)
+      g_rules[i] = filtered[i];
+  }
+
+
+//-------------------------------------------------------------------
+// Parseo de nombre de feature: "Family_Period"
+//-------------------------------------------------------------------
+bool ParseFeatureName(const string featName, string &family, int &period)
+  {
+   int pos = StringFind(featName, "_");
+   if(pos < 0)
+     {
+      // Fallback: feature no parseable pero permitimos su uso con nombre completo
+      family = featName;
+      period = -1;
+      return(false);  // señalamos que es no parseado, pero no error fatal
+     }
+
+   family = StringSubstr(featName, 0, pos);
+   string pstr = StringSubstr(featName, pos + 1);
+   if(StringLen(pstr) <= 0)
+      return(false);
+
+   period = (int)StringToInteger(pstr);
+   return(true);
+  }
+
+
+// Crear handle de indicador para una familia/periodo (igual que DataExtractor_v2)
+int CreateHandleForFeature(const string family, int period)
+  {
+   ENUM_TIMEFRAMES tf = (ENUM_TIMEFRAMES)Period();
+
+   if(family == "BearsPower")
+      return(iBearsPower(_Symbol, tf, period));
+
+   if(family == "BullsPower")
+      return(iBullsPower(_Symbol, tf, period));
+
+   if(family == "CCI")
+      return(iCCI(_Symbol, tf, period, PRICE_TYPICAL));
+
+   if(family == "DeMarker")
+      return(iDeMarker(_Symbol, tf, period));
+
+   if(family == "ForceIndex")
+      return(iForce(_Symbol, tf, period, MODE_SMA, VOLUME_TICK));
+
+   if(family == "Momentum")
+      return(iMomentum(_Symbol, tf, period, PRICE_CLOSE));
+
+   if(family == "RSI")
+      return(iRSI(_Symbol, tf, period, PRICE_CLOSE));
+
+   if(family == "Stoch")
+     {
+      int kPeriod = period;
+      int dPeriod = period / 2;
+      if(dPeriod < 1)
+         dPeriod = 1;
+      return(iStochastic(_Symbol, tf,
+                         kPeriod, dPeriod, 2,
+                         MODE_SMA, STO_LOWHIGH));
+     }
+
+   if(family == "WPR")
+      return(iWPR(_Symbol, tf, period));
+
+   return(INVALID_HANDLE);
+  }
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+int CreateHandleForFeatureFallback(const string family, int period)
+  {
+   ENUM_TIMEFRAMES tf = (ENUM_TIMEFRAMES)Period();
+
+// Puedes extender esta parte si hay nombres personalizados
+   if(family == "MyCustom")
+      return(iCustom(_Symbol, tf, "MyCustomIndicator"));  // Ejemplo
+
+// Si el parsing fue correcto, redirige al original
+   if(period > 0)
+      return CreateHandleForFeature(family, period);
+
+   return(INVALID_HANDLE);
+  }
+
+//-------------------------------------------------------------------
+// Inicializar handles de indicadores para las reglas seleccionadas
+// H004: usa cache para no crear handles duplicados
+//-------------------------------------------------------------------
+void InitRuleIndicators()
+  {
+   int n = ArraySize(g_rules);
+
+   for(int r=0; r<n; r++)
+     {
+      // Estado conocido
+      g_rules[r].indicatorHandle  = INVALID_HANDLE;
+      g_rules[r].indicatorHandle2 = INVALID_HANDLE;
+
+      // -----------------------
+      // Feature 1
+      // -----------------------
+      int fIndex1 = g_rules[r].featureIndex;
+      if(fIndex1 < 0 || fIndex1 >= g_numFeatures)
+        {
+         PrintFormat("ERROR: featureIndex inválido en regla #%d (featureIndex=%d). Regla desactivada.",
+                     r+1, fIndex1);
+         continue;
+        }
+
+      string featName1 = g_featureNames[fIndex1];
+      string family1;
+      int    period1;
+
+      if(!ParseFeatureName(featName1, family1, period1))
+        {
+         // En tu pipeline con DataExtractor_v3 esto debería ser raro
+         PrintFormat("WARNING: no se pudo parsear feature '%s' (regla #%d). Sin fallback real salvo iCustom.",
+                     featName1, r+1);
+         family1 = featName1;
+         period1 = -1;
+        }
+
+      int handle1 = GetOrCreateHandleCached(family1, period1);
+      if(handle1 == INVALID_HANDLE)
+        {
+         PrintFormat("ERROR: no se pudo obtener/crear handle para '%s' (period=%d). Regla #%d desactivada.",
+                     family1, period1, r+1);
+         continue;
+        }
+
+      g_rules[r].indicatorHandle = handle1;
+
+      // -----------------------
+      // Feature 2 (si combo)
+      // -----------------------
+      if(g_rules[r].isCombo)
+        {
+         int fIndex2 = g_rules[r].featureIndex2;
+         if(fIndex2 < 0 || fIndex2 >= g_numFeatures)
+           {
+            PrintFormat("ERROR: featureIndex2 inválido en regla #%d (featureIndex2=%d). Combo desactivado.",
+                        r+1, fIndex2);
+            // OJO: NO liberar handle1 (es compartido en cache)
+            g_rules[r].indicatorHandle  = INVALID_HANDLE;
+            g_rules[r].indicatorHandle2 = INVALID_HANDLE;
+            continue;
+           }
+
+         string featName2 = g_featureNames[fIndex2];
+         string family2;
+         int    period2;
+
+         if(!ParseFeatureName(featName2, family2, period2))
+           {
+            PrintFormat("ERROR: no se pudo parsear segundo feature '%s' (regla #%d). Combo desactivado.",
+                        featName2, r+1);
+            // OJO: NO liberar handle1 (cache)
+            g_rules[r].indicatorHandle  = INVALID_HANDLE;
+            g_rules[r].indicatorHandle2 = INVALID_HANDLE;
+            continue;
+           }
+
+         int handle2 = GetOrCreateHandleCached(family2, period2);
+         if(handle2 == INVALID_HANDLE)
+           {
+            PrintFormat("ERROR: no se pudo obtener/crear handle para segundo feature '%s' (period=%d). Regla #%d desactivada.",
+                        family2, period2, r+1);
+            // OJO: NO liberar handle1 (cache)
+            g_rules[r].indicatorHandle  = INVALID_HANDLE;
+            g_rules[r].indicatorHandle2 = INVALID_HANDLE;
+            continue;
+           }
+
+         g_rules[r].indicatorHandle2 = handle2;
+
+         PrintFormat("Regla #%d (COMBO): f1=%s h1=%d | f2=%s h2=%d (cache)",
+                     r+1, featName1, handle1, featName2, handle2);
+        }
+      else
+        {
+         PrintFormat("Regla #%d (UNIV): f=%s h=%d (cache)",
+                     r+1, featName1, handle1);
+        }
+     }
+  }
+
+
+//-------------------------------------------------------------------
+// Evaluar reglas en una barra dada (shift) → nº de BUY / SELL
+//-------------------------------------------------------------------
+void EvaluateRulesOnBar(const int shift, int &outLongCount, int &outShortCount)
+  {
+   outLongCount  = 0;
+   outShortCount = 0;
+
+   int n = ArraySize(g_rules);
+   if(n <= 0)
+      return;
+
+   double buf1[], buf2[];
+
+   for(int r=0; r<n; r++)
+     {
+      int handle1 = g_rules[r].indicatorHandle;
+      if(handle1 == INVALID_HANDLE)
+         continue;
+
+      ArrayResize(buf1, 1);
+      if(CopyBuffer(handle1, 0, shift, 1, buf1) <= 0)
+         continue;
+
+      double v1 = buf1[0];
+      if(!MathIsValidNumber(v1) || v1 == EMPTY_VALUE)
+         continue;
+
+      bool match1;
+      if(g_rules[r].binIndex < InpNumBins - 1)
+         match1 = (v1 >= g_rules[r].binLow && v1 < g_rules[r].binHigh);
+      else
+         match1 = (v1 >= g_rules[r].binLow);
+
+      if(!match1)
+         continue;
+
+      // Si es combo, comprobar también segundo feature
+      if(g_rules[r].isCombo)
+        {
+         int handle2 = g_rules[r].indicatorHandle2;
+         if(handle2 == INVALID_HANDLE)
+            continue;
+
+         ArrayResize(buf2, 1);
+         if(CopyBuffer(handle2, 0, shift, 1, buf2) <= 0)
+            continue;
+
+         double v2 = buf2[0];
+         if(!MathIsValidNumber(v2) || v2 == EMPTY_VALUE)
+            continue;
+
+         bool match2;
+         if(g_rules[r].binIndex2 < InpNumBins - 1)
+            match2 = (v2 >= g_rules[r].binLow2 && v2 < g_rules[r].binHigh2);
+         else
+            match2 = (v2 >= g_rules[r].binLow2);
+
+         if(!match2)
+            continue;
+        }
+
+      if(g_rules[r].side > 0)
+         outLongCount++;
+      else
+         if(g_rules[r].side < 0)
+            outShortCount++;
+     }
+  }
+
+//-------------------------------------------------------------------
+// Meta-señal basada en votos agregados de reglas
+//  - longCount, shortCount salen de EvaluateRulesOnBar(1,...)
+//  - Devuelve +1 (BUY), -1 (SELL) o 0 (sin señal suficientemente clara)
+//-------------------------------------------------------------------
+int ComputeMetaRuleSignal(const int longCount, const int shortCount)
+  {
+// Sin reglas activas → nada
+   if(longCount <= 0 && shortCount <= 0)
+      return(0);
+
+   int maxVotes = (longCount > shortCount ? longCount : shortCount);
+   if(maxVotes < InpMetaMinAbsVotes)
+      return(0);
+
+   int diff = longCount - shortCount;
+   if(MathAbs(diff) < InpMetaMinDiffVotes)
+      return(0);
+
+   if(diff > 0)
+      return(+1);   // mayoría LONG clara
+   if(diff < 0)
+      return(-1);   // mayoría SHORT clara
+
+   return(0);
+  }
+
+//-------------------------------------------------------------------
+// Obtener dirección actual de la posición del EA en este símbolo
+//-------------------------------------------------------------------
+int GetCurrentDirection()
+  {
+   int total = PositionsTotal();
+   for(int i=0; i<total; i++)
+     {
+      if(!position.SelectByIndex(i))
+         continue;
+
+      if(position.Symbol() != _Symbol || (int)position.Magic() != InpMagic)
+         continue;
+
+      ENUM_POSITION_TYPE type = (ENUM_POSITION_TYPE)position.PositionType();
+      if(type == POSITION_TYPE_BUY)
+         return(+1);
+      if(type == POSITION_TYPE_SELL)
+         return(-1);
+     }
+   return(0);
+  }
+
+
+
+//-------------------------------------------------------------------
+// Cerrar posición actual del EA en este símbolo (si existe)
+// Devuelve true si no hubo errores al cerrar (o no había nada que cerrar)
+//-------------------------------------------------------------------
+bool CloseCurrentPosition()
+  {
+   bool ok_all = true;
+   int total = PositionsTotal();
+
+   for(int i = total - 1; i >= 0; i--)
+     {
+      if(!position.SelectByIndex(i))
+         continue;
+
+      if(position.Symbol() != _Symbol)
+         continue;
+      if((int)position.Magic() != InpMagic)
+         continue;
+
+      ulong ticket = (ulong)position.Ticket();
+
+      ResetLastError();
+      if(!trade.PositionClose(ticket))
+        {
+         ok_all = false;
+         int err      = GetLastError();
+         uint retcode = trade.ResultRetcode();
+
+         PrintFormat("ERROR al cerrar ticket %I64u. lastError=%d, retcode=%u, desc='%s'",
+                     ticket,
+                     err,
+                     retcode,
+                     trade.ResultRetcodeDescription());
+        }
+     }
+
+   return(ok_all);
+  }
+
+
+//-------------------------------------------------------------------
+// Abrir posición con control de error
+//-------------------------------------------------------------------
+bool OpenPosition(const int dir, const string context)
+  {
+   if(dir == 0)
+      return(true);
+
+   ResetLastError();
+   bool ok = false;
+
+   if(dir > 0)
+      ok = trade.Buy(InpLots, _Symbol);
+   else
+      ok = trade.Sell(InpLots, _Symbol);
+
+   if(!ok)
+     {
+      int  err      = GetLastError();
+      uint retcode  = trade.ResultRetcode();
+      string side   = (dir > 0 ? "BUY" : "SELL");
+
+      PrintFormat("ERROR al abrir %s (%s). lotes=%.2f, lastError=%d, retcode=%u, desc='%s'",
+                  side,
+                  context,
+                  InpLots,
+                  err,
+                  retcode,
+                  trade.ResultRetcodeDescription());
+     }
+
+   return(ok);
+  }
+
+
+//+------------------------------------------------------------------+
+//| OnInit                                                           |
+//+------------------------------------------------------------------+
+int OnInit()
+  {
+   Print("=== OneR_MonkeyTrader_FromCSV: inicio ===");
+   PrintFormat("Symbol: %s  Timeframe: %s", _Symbol, EnumToString((ENUM_TIMEFRAMES)Period()));
+   Print("Archivo CSV: ", InpCsvFileName);
+
+   trade.SetExpertMagicNumber(InpMagic);
+
+// Validación de parámetros críticos
+   if(InpMinTradesPerBin <= 0)
+     {
+      Print("ERROR: InpMinTradesPerBin debe ser mayor que cero.");
+      return(INIT_FAILED);
+     }
+
+   if(InpNumBins <= 0)
+     {
+      Print("ERROR: InpNumBins debe ser mayor que cero.");
+      return(INIT_FAILED);
+     }
+
+// 1) Carga de datos
+   if(!LoadCSV(InpCsvFileName))
+     {
+      Print("Abortando: error al cargar CSV.");
+      return(INIT_FAILED);
+     }
+
+// 2) Cálculo del target
+   if(!ComputeTarget())
+     {
+      Print("Abortando: error en ComputeTarget.");
+      return(INIT_FAILED);
+     }
+
+// 3) Construcción de índice entrenable (filtro por fechas)
+   if(BuildTrainableIndex() <= 0)
+     {
+      Print("Abortando: no hay filas entrenables.");
+      return(INIT_FAILED);
+     }
+
+// 4) Entrenamiento OneR (extracción de reglas con split Train/Test)
+   if(!TrainOneR_TopK())
+     {
+      Print("Abortando: no se han encontrado reglas OneR válidas.");
+      return(INIT_FAILED);
+     }
+
+// 4.ter) Generar combinaciones AND 2-a-2 SOLO si la familia lo permite
+   if(InpRuleFamilyMode==RULE_FAMILY_BIVARIATE_COMBOS_ONLY)
+     {
+      int baseN = ArraySize(g_rules);
+      GeneratePairwiseAndCombinationsFromRules();
+      int nAfter  = ArraySize(g_rules);
+      int combosN = nAfter - baseN;
+
+      if(combosN <= 0)
+        {
+         Print("No se pudieron generar combos AND 2-a-2 (BIVARIATE_COMBOS_ONLY). El EA no operará.");
+         return(INIT_SUCCEEDED);
+        }
+
+      RuleInfo onlyCombos[];
+      ArrayResize(onlyCombos, combosN);
+      for(int i=0;i<combosN;i++)
+         onlyCombos[i] = g_rules[baseN + i];
+
+      ArrayResize(g_rules, combosN);
+      for(int i=0;i<combosN;i++)
+         g_rules[i] = onlyCombos[i];
+     }
+
+
+
+// ----------------------------------------------------------------
+// 5) VALIDATION - Monkey Test
+// ----------------------------------------------------------------
+   if(InpUseMonkeyFilter)
+     {
+      MathSrand((int)InpMonkeySeed);
+      ApplyMonkeyFilterToRules();
+     }
+
+   int nRules = ArraySize(g_rules);
+   if(nRules <= 0)
+     {
+      Print("No quedan reglas tras Monkey Filter. El EA no operará.");
+
+      // Control de posición huérfana en modo PERSISTENT
+      if(InpExecMode == TRADE_MODE_PERSISTENT)
+        {
+         int currentDir = GetCurrentDirection();
+         if(currentDir != 0)
+           {
+            PrintFormat("WARNING: Se detecta posición huérfana tras reinicio (post-Monkey, modo PERSISTENT) → intentando cerrar.");
+            bool closed = CloseCurrentPosition();
+            if(!closed)
+               Print("ERROR: no se pudo cerrar la posición huérfana.");
+            else
+               Print("Posición huérfana cerrada con éxito.");
+           }
+        }
+
+      return(INIT_SUCCEEDED);
+     }
+
+// ----------------------------------------------------------------
+// 6) ENSEMBLE - Estabilidad temporal (Sharpe solo para ranking)
+// ----------------------------------------------------------------
+   ApplySharpeRankingToRules();   // solo ordena si InpUseSharpeFilter=true
+
+   nRules = ArraySize(g_rules);
+   if(nRules <= 0)
+     {
+      Print("No quedan reglas tras Monkey+Sharpe. El EA no operará.");
+
+      if(InpExecMode == TRADE_MODE_PERSISTENT)
+        {
+         int currentDir = GetCurrentDirection();
+         if(currentDir != 0)
+           {
+            PrintFormat("WARNING: Se detecta posición huérfana tras reinicio (post-Sharpe, modo PERSISTENT) → intentando cerrar.");
+            bool closed = CloseCurrentPosition();
+            if(!closed)
+               Print("ERROR: no se pudo cerrar la posición huérfana.");
+            else
+               Print("Posición huérfana cerrada con éxito.");
+           }
+        }
+
+      return(INIT_SUCCEEDED);
+     }
+
+// ----------------------------------------------------------------
+// 7) SYNTHETIC - Filtro sintético DESPUÉS de Monkey+Sharpe
+// ----------------------------------------------------------------
+   if(InpUseSyntheticFilter)
+     {
+      MathSrand((int)InpSyntheticSeed);
+      ApplySyntheticStabilityFilterToRules();
+     }
+
+// --- LUCKFILTER (etapa global: post-sintético, pre-Jaccard)
+   if(!LuckFilter_ValidatePipelineOnly())
+     {
+      Print("Abortando: LuckFilter(validation) NO PASA -> INIT_FAILED");
+
+      // Opcional (recomendado si usas PERSISTENT): cerrar posición huérfana antes de abortar
+      if(InpExecMode == TRADE_MODE_PERSISTENT)
+        {
+         int cur = GetCurrentDirection();
+         if(cur != 0)
+            CloseCurrentPosition();
+        }
+
+      return(0);//Se ha modificado de INIT_SUCCEEDED a 0, porque el 0 también me sirve para la investigación
+     }
+
+
+   nRules = ArraySize(g_rules);
+   if(nRules <= 0)
+     {
+      Print("No quedan reglas tras filtro sintético. El EA no operará.");
+
+      if(InpExecMode == TRADE_MODE_PERSISTENT)
+        {
+         int currentDir = GetCurrentDirection();
+         if(currentDir != 0)
+           {
+            PrintFormat("WARNING: Se detecta posición huérfana tras reinicio (post-Sintético, modo PERSISTENT) → intentando cerrar.");
+            bool closed = CloseCurrentPosition();
+            if(!closed)
+               Print("ERROR: no se pudo cerrar la posición huérfana.");
+            else
+               Print("Posición huérfana cerrada con éxito.");
+           }
+        }
+
+      return(INIT_SUCCEEDED);
+     }
+
+// ----------------------------------------------------------------
+// 7.bis) ENSEMBLE - Filtro por score mínimo (SharpeScore)
+// ----------------------------------------------------------------
+   if(InpUseSharpeFilter && InpMinRuleScore > 0.0)
+     {
+      ApplyMinScoreFilterToRules();
+
+      nRules = ArraySize(g_rules);
+      if(nRules <= 0)
+        {
+         PrintFormat("No quedan reglas tras MinScoreFilter (score >= %.6f). El EA no operará.",
+                     InpMinRuleScore);
+
+         if(InpExecMode == TRADE_MODE_PERSISTENT)
+           {
+            int currentDir = GetCurrentDirection();
+            if(currentDir != 0)
+              {
+               PrintFormat("WARNING: Se detecta posición huérfana tras reinicio (post-MinScore, modo PERSISTENT) → intentando cerrar.");
+               bool closed = CloseCurrentPosition();
+               if(!closed)
+                  Print("ERROR: no se pudo cerrar la posición huérfana.");
+               else
+                  Print("Posición huérfana cerrada con éxito.");
+              }
+           }
+
+         return(INIT_SUCCEEDED);
+        }
+     }
+
+// ----------------------------------------------------------------
+// 8) ENSEMBLE - Selección final balanceada + diversidad (top-K)
+//      - Jaccard se aplica SIEMPRE que InpUseJaccardFilter=true,
+//        independientemente de si hay recorte top-K o no.
+// ----------------------------------------------------------------
+   nRules = ArraySize(g_rules);
+   int nBeforeLimit = nRules;
+
+   if(nRules <= 0)
+     {
+      Print("No hay reglas disponibles para la selección final.");
+     }
+   else
+     {
+      // K solicitado por el usuario (0 = sin límite explícito)
+      int K_requested = InpNumRulesToSelect;
+
+      // K efectivo:
+      // - Si K_requested <= 0  → sin límite → K_effective = nRules
+      // - Si K_requested > 0  → K_effective = min(K_requested, nRules)
+      int K_effective = nRules;
+      if(K_requested > 0 && K_requested < nRules)
+         K_effective = K_requested;
+
+      // ¿Usamos realmente Jaccard?
+      bool useJaccard = (InpUseJaccardFilter && InpMaxJaccardSameSide < 1.0);
+
+      if(useJaccard)
+        {
+         int K = K_effective;
+
+         // Objetivo ideal LONG/SHORT
+         int targetLong  = K / 2;
+         int targetShort = K - targetLong;
+
+         RuleInfo selected[];
+         ArrayResize(selected, 0);
+
+         int selectedIdx[];
+         ArrayResize(selectedIdx, 0);
+
+         int selectedLong  = 0;
+         int selectedShort = 0;
+
+         // PASO 1: rellenar intentando respetar objetivo por lado
+         for(int passSide = +1; passSide >= -1 && ArraySize(selected) < K; passSide -= 2)
+           {
+            for(int i=0; i<nRules && ArraySize(selected) < K; i++)
+              {
+               RuleInfo cand = g_rules[i];
+
+               if(passSide == +1 && cand.side <= 0)
+                  continue;
+               if(passSide == -1 && cand.side >= 0)
+                  continue;
+
+               if(passSide == +1 && selectedLong >= targetLong)
+                  continue;
+               if(passSide == -1 && selectedShort >= targetShort)
+                  continue;
+
+               // JaccardDiversity vs reglas ya seleccionadas del mismo lado
+               double diversity = ComputeJaccardDiversity(cand, selectedIdx, ArraySize(selectedIdx));
+               double maxJ      = 1.0 - diversity;
+
+               if(maxJ > InpMaxJaccardSameSide)
+                  continue;
+
+               // Aceptamos el candidato
+               int pos = ArraySize(selected);
+               ArrayResize(selected, pos + 1);
+               selected[pos] = cand;
+
+               int posIdx = ArraySize(selectedIdx);
+               ArrayResize(selectedIdx, posIdx + 1);
+               selectedIdx[posIdx] = i;
+
+               if(cand.side > 0)
+                  selectedLong++;
+               else
+                  if(cand.side < 0)
+                     selectedShort++;
+              }
+           }
+
+         // PASO 2: si aún faltan reglas hasta K, rellenar con cualquier lado,
+         // siempre respetando JaccardSameSide
+         for(int i=0; i<nRules && ArraySize(selected) < K; i++)
+           {
+            // saltar si ya está seleccionada
+            bool already = false;
+            for(int s=0; s<ArraySize(selectedIdx); s++)
+              {
+               if(selectedIdx[s] == i)
+                 {
+                  already = true;
+                  break;
+                 }
+              }
+            if(already)
+               continue;
+
+            RuleInfo cand = g_rules[i];
+            if(cand.side == 0)
+               continue;
+
+            double diversity = ComputeJaccardDiversity(cand, selectedIdx, ArraySize(selectedIdx));
+            double maxJ      = 1.0 - diversity;
+
+            if(maxJ > InpMaxJaccardSameSide)
+               continue;
+
+            int pos = ArraySize(selected);
+            ArrayResize(selected, pos + 1);
+            selected[pos] = cand;
+
+            int posIdx = ArraySize(selectedIdx);
+            ArrayResize(selectedIdx, posIdx + 1);
+            selectedIdx[posIdx] = i;
+
+            if(cand.side > 0)
+               selectedLong++;
+            else
+               if(cand.side < 0)
+                  selectedShort++;
+           }
+
+         // Copiar selección a g_rules
+         ArrayResize(g_rules, ArraySize(selected));
+         for(int i=0; i<ArraySize(selected); i++)
+            g_rules[i] = selected[i];
+
+         // Reordenar por Sharpe dentro del conjunto final
+         ApplySharpeRankingToRules();
+         nRules = ArraySize(g_rules);
+
+         // Contar LONG/SHORT finales
+         int finalLong  = 0;
+         int finalShort = 0;
+         for(int i=0; i<nRules; i++)
+           {
+            if(g_rules[i].side > 0)
+               finalLong++;
+            else
+               if(g_rules[i].side < 0)
+                  finalShort++;
+           }
+
+         if(nRules < K)
+           {
+            PrintFormat("JaccardDiversity: no se ha podido llegar a K=%d reglas sin superar maxJSameSide=%.2f. Se usan %d reglas.",
+                        K, InpMaxJaccardSameSide, nRules);
+           }
+
+         PrintFormat("Selección final balanceada+diversa (Jaccard): de %d reglas aceptadas tras Monkey+Sharpe+Sintético, se usan %d (LONG=%d, SHORT=%d, K efectivo=%d, K solicitado=%d, maxJSameSide=%.2f).",
+                     nBeforeLimit, nRules, finalLong, finalShort, K_effective, K_requested, InpMaxJaccardSameSide);
+        }
+      else
+        {
+         // MODO ANTIGUO: selección balanceada sin Jaccard
+         int K = K_effective;
+
+         int targetLong  = K / 2;
+         int targetShort = K - targetLong;
+
+         int totalLongAvail  = 0;
+         int totalShortAvail = 0;
+         for(int i=0; i<nRules; i++)
+           {
+            if(g_rules[i].side > 0)
+               totalLongAvail++;
+            else
+               if(g_rules[i].side < 0)
+                  totalShortAvail++;
+           }
+
+         int takeLong  = MathMin(targetLong,  totalLongAvail);
+         int takeShort = MathMin(targetShort, totalShortAvail);
+
+         RuleInfo selected[];
+         ArrayResize(selected, 0);
+
+         bool used[];
+         ArrayResize(used, nRules);
+         for(int i=0; i<nRules; i++)
+            used[i] = false;
+
+         int selectedCount = 0;
+
+         // 8.1) LONG
+         for(int i=0; i<nRules && selectedCount < K && takeLong > 0; i++)
+           {
+            if(g_rules[i].side <= 0)
+               continue;
+
+            int pos = ArraySize(selected);
+            ArrayResize(selected, pos + 1);
+            selected[pos] = g_rules[i];
+            used[i]       = true;
+            selectedCount++;
+            takeLong--;
+           }
+
+         // 8.2) SHORT
+         for(int i=0; i<nRules && selectedCount < K && takeShort > 0; i++)
+           {
+            if(g_rules[i].side >= 0)
+               continue;
+
+            int pos = ArraySize(selected);
+            ArrayResize(selected, pos + 1);
+            selected[pos] = g_rules[i];
+            used[i]       = true;
+            selectedCount++;
+            takeShort--;
+           }
+
+         // 8.3) Relleno con las mejores restantes
+         for(int i=0; i<nRules && selectedCount < K; i++)
+           {
+            if(used[i])
+               continue;
+
+            int pos = ArraySize(selected);
+            ArrayResize(selected, pos + 1);
+            selected[pos] = g_rules[i];
+            used[i]       = true;
+            selectedCount++;
+           }
+
+         ArrayResize(g_rules, ArraySize(selected));
+         for(int i=0; i<ArraySize(selected); i++)
+            g_rules[i] = selected[i];
+
+         ApplySharpeRankingToRules();
+         nRules = ArraySize(g_rules);
+
+         int finalLong  = 0;
+         int finalShort = 0;
+         for(int i=0; i<nRules; i++)
+           {
+            if(g_rules[i].side > 0)
+               finalLong++;
+            else
+               if(g_rules[i].side < 0)
+                  finalShort++;
+           }
+
+         PrintFormat("Selección final balanceada (sin Jaccard): de %d reglas aceptadas tras Monkey+Sharpe+Sintético, se usan %d (LONG=%d, SHORT=%d, K efectivo=%d, K solicitado=%d).",
+                     nBeforeLimit, nRules, finalLong, finalShort, K_effective, K_requested);
+        }
+     }
+
+// --- NUEVO: forzar simetría LONG/SHORT en las reglas finales (si es posible)
+   EnforceSymmetricFinalRules();
+
+
+// ----------------------------------------------------------------
+// 9) Listado de reglas FINALES
+// ----------------------------------------------------------------
+   nRules = ArraySize(g_rules);
+   if(nRules > 0)
+     {
+      Print("Listado de reglas FINALES (tras Monkey + Sharpe + Sintético + selección balanceada/diversa):");
+
+      for(int i=0; i<nRules; i++)
+        {
+         RuleInfo rule = g_rules[i];
+
+         double score;
+         if(InpUseSharpeFilter)
+            score = ComputeSharpeScoreForRule(rule);
+         else
+            score = rule.meanRet;
+
+         PrintFormat(
+            " #%d: %s | trades=%d | meanRet=%.6f | score=%.6f | p=%.6f",
+            i+1,
+            DescribeRuleShort(rule),
+            rule.numTrades,
+            rule.meanRet,
+            score,
+            rule.monkeyPValue
+         );
+        }
+     }
+   else
+     {
+      Print("No hay reglas finales tras la selección balanceada/diversa.");
+     }
+
+// ----------------------------------------------------------------
+// 10) Inicializar indicadores para reglas finales + limpieza
+// ----------------------------------------------------------------
+   InitRuleIndicators();
+
+   RuleInfo filtered[];
+   ArrayResize(filtered, 0);
+   for(int r=0; r<nRules; r++)
+     {
+      if(g_rules[r].indicatorHandle == INVALID_HANDLE)
+         continue;
+
+      int pos = ArraySize(filtered);
+      ArrayResize(filtered, pos + 1);
+      filtered[pos] = g_rules[r];
+     }
+
+   ArrayResize(g_rules, ArraySize(filtered));
+   for(int i=0; i<ArraySize(filtered); i++)
+      g_rules[i] = filtered[i];
+
+   PrintFormat("Reglas finales operativas: %d", ArraySize(g_rules));
+
+   g_lastBarTime = 0;
+
+   Print("=== OneR_MonkeyTrader_FromCSV: listo para operar ===");
+   return(INIT_SUCCEEDED);
+  }
+
+
+//-------------------------------------------------------------------
+// OnDeinit: liberar indicadores
+//-------------------------------------------------------------------
+void OnDeinit(const int reason)
+  {
+   ReleaseAllCachedHandles();
+  }
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+void OnTick()
+  {
+// Operamos solo en nueva vela
+   datetime currentBarTime = iTime(_Symbol, PERIOD_CURRENT, 0);
+   if(currentBarTime == g_lastBarTime)
+      return;
+   g_lastBarTime = currentBarTime;
+
+   int nRules = ArraySize(g_rules);
+
+//=================================================================
+// MODO 1: TRADE 1-BAR (sin cambios)
+//=================================================================
+   if(InpExecMode == TRADE_MODE_ONE_BAR)
+     {
+      // 1) Cerrar siempre la posición de la barra anterior
+      int prevDir   = GetCurrentDirection(); // -1, 0, +1
+      bool closed_ok = true;
+
+      if(prevDir != 0)
+        {
+         PrintFormat("Nueva barra %s → cerramos trade 1-bar anterior (dir=%d)",
+                     TimeToString(currentBarTime), prevDir);
+         closed_ok = CloseCurrentPosition();
+        }
+
+      // Si hubo problema al cerrar, NO abrimos nada nuevo para evitar acumular posiciones
+      if(!closed_ok)
+        {
+         Print("WARNING (ONE_BAR): fallo al cerrar la posición anterior → no abrimos trade nuevo en esta barra");
+         return;
+        }
+
+      // Si no hay reglas operativas, no abrimos nada para esta barra
+      if(nRules <= 0)
+        {
+         Print("Sin reglas operativas (modo ONE_BAR) → no abrimos trade en esta barra");
+         return;
+        }
+
+      // 2) Evaluar reglas en la vela cerrada (shift = 1)
+      int longCount  = 0;
+      int shortCount = 0;
+      EvaluateRulesOnBar(1, longCount, shortCount);
+
+      // 3) Señal neta para ESTA barra
+      int desiredDir = 0;
+      if(longCount > 0 && shortCount == 0)
+         desiredDir = +1;      // solo BUY
+      else
+         if(shortCount > 0 && longCount == 0)
+            desiredDir = -1;   // solo SELL
+         else
+            desiredDir = 0;    // conflicto o nada → FLAT
+
+      // 4) Abrir trade 1-bar que se cerrará en la próxima barra
+      if(desiredDir == +1)
+        {
+         PrintFormat("Señal BUY 1-bar (long=%d, short=%d) → abrimos BUY para esta barra",
+                     longCount, shortCount);
+         OpenPosition(+1, "ONE_BAR");
+        }
+      else
+         if(desiredDir == -1)
+           {
+            PrintFormat("Señal SELL 1-bar (long=%d, short=%d) → abrimos SELL para esta barra",
+                        longCount, shortCount);
+            OpenPosition(-1, "ONE_BAR");
+           }
+         else
+           {
+            PrintFormat("Sin señal clara 1-bar (long=%d, short=%d) → FLAT en esta barra",
+                        longCount, shortCount);
+           }
+
+      return; // Fin modo ONE_BAR
+     }
+
+//=================================================================
+// MODO 3: VOTING (nuevo)
+//=================================================================
+   if(InpExecMode == TRADE_MODE_VOTING)
+     {
+      // Si no hay reglas operativas → cerrar cualquier posición y salir
+      if(nRules <= 0)
+        {
+         int cur = GetCurrentDirection();
+         if(cur != 0)
+           {
+            Print("Sin reglas operativas (modo VOTING) → cerramos posición actual");
+            bool closed_ok = CloseCurrentPosition();
+            if(!closed_ok)
+               Print("WARNING (VOTING): fallo al cerrar posición al quedar sin reglas operativas");
+           }
+         return;
+        }
+
+      // 1) Evaluar reglas en la vela cerrada
+      int longCount  = 0;
+      int shortCount = 0;
+      EvaluateRulesOnBar(1, longCount, shortCount);
+
+      // 2) Meta-señal (voto agregado con umbrales)
+      int metaDir = ComputeMetaRuleSignal(longCount, shortCount);
+      int curDir  = GetCurrentDirection();   // -1,0,+1
+
+      // 3) Lógica de gestión PERSISTENT pero usando metaDir en lugar de la señal "simple"
+      if(curDir == 0)
+        {
+         // Estábamos FLAT
+         if(metaDir == +1)
+           {
+            PrintFormat("VOTING: señal BUY (long=%d, short=%d) → abrimos BUY",
+                        longCount, shortCount);
+            OpenPosition(+1, "VOTING_ENTER");
+           }
+         else
+            if(metaDir == -1)
+              {
+               PrintFormat("VOTING: señal SELL (long=%d, short=%d) → abrimos SELL",
+                           longCount, shortCount);
+               OpenPosition(-1, "VOTING_ENTER");
+              }
+            else
+              {
+               PrintFormat("VOTING: sin mayoría suficiente (long=%d, short=%d) → seguimos FLAT",
+                           longCount, shortCount);
+              }
+        }
+      else
+        {
+         // Ya hay posición
+         if(metaDir == 0)
+           {
+            // La mayoría se ha perdido → cerrar
+            PrintFormat("VOTING: se pierde mayoría (long=%d, short=%d) → cerramos posición actual dir=%d",
+                        longCount, shortCount, curDir);
+            bool closed_ok = CloseCurrentPosition();
+            if(!closed_ok)
+               Print("WARNING (VOTING): fallo al cerrar posición al perder mayoría → mantenemos hasta próxima barra");
+           }
+         else
+            if(metaDir != curDir)
+              {
+               // Giro de mayoría LONG↔SHORT
+               PrintFormat("VOTING: giro de mayoría (long=%d, short=%d) curDir=%d, metaDir=%d → flip",
+                           longCount, shortCount, curDir, metaDir);
+
+               bool closed_ok = CloseCurrentPosition();
+               if(!closed_ok)
+                 {
+                  Print("WARNING (VOTING): fallo al cerrar posición en giro de señal → no abrimos nueva para evitar hedge");
+                  return;
+                 }
+
+               if(metaDir == +1)
+                  OpenPosition(+1, "VOTING_FLIP");
+               else
+                  OpenPosition(-1, "VOTING_FLIP");
+              }
+            else
+              {
+               // metaDir == curDir → mantenemos posición
+               PrintFormat("VOTING: mantenemos posición dir=%d (long=%d, short=%d)",
+                           curDir, longCount, shortCount);
+              }
+        }
+
+      return; // Fin modo VOTING
+     }
+
+//=================================================================
+// MODO 2: PERSISTENT (tu lógica original, sin cambios)
+//=================================================================
+
+// Si no hay reglas operativas en este modo, cerramos cualquier posición
+   if(nRules <= 0)
+     {
+      int cur = GetCurrentDirection();
+      if(cur != 0)
+        {
+         Print("Sin reglas operativas (modo PERSISTENT) → cerramos posición actual");
+         bool closed_ok = CloseCurrentPosition();
+         if(!closed_ok)
+            Print("WARNING (PERSISTENT): fallo al cerrar posición al quedar sin reglas operativas");
+        }
+      return;
+     }
+
+// Evaluamos reglas en la vela cerrada (shift=1)
+   int longCount  = 0;
+   int shortCount = 0;
+   EvaluateRulesOnBar(1, longCount, shortCount);
+
+   int currentDir = GetCurrentDirection();  // -1, 0, +1
+   int desiredDir = currentDir;
+
+// 1) Si estamos FLAT: solo entramos si no hay conflicto
+   if(currentDir == 0)
+     {
+      if(longCount > 0 && shortCount == 0)
+         desiredDir = +1;   // abrir BUY
+      else
+         if(shortCount > 0 && longCount == 0)
+            desiredDir = -1;   // abrir SELL
+         else
+            desiredDir = 0;    // conflicto o ninguna → seguir FLAT
+     }
+// 2) Si estamos LONG: mientras haya al menos una regla LONG, mantenemos
+   else
+      if(currentDir == +1)
+        {
+         if(longCount > 0)
+           {
+            // Hay alguna regla BUY → mantenemos BUY aunque haya SELL
+            desiredDir = +1;
+           }
+         else
+            if(shortCount > 0)
+              {
+               // Ya no hay BUY y sí hay SELL → giro a SELL
+               desiredDir = -1;
+              }
+            else
+              {
+               // Sin reglas ni BUY ni SELL → FLAT
+               desiredDir = 0;
+              }
+        }
+      // 3) Si estamos SHORT: simétrico
+      else
+         if(currentDir == -1)
+           {
+            if(shortCount > 0)
+              {
+               // Hay alguna regla SELL → mantenemos SELL aunque haya BUY
+               desiredDir = -1;
+              }
+            else
+               if(longCount > 0)
+                 {
+                  // Ya no hay SELL y sí hay BUY → giro a BUY
+                  desiredDir = +1;
+                 }
+               else
+                 {
+                  // Sin reglas → FLAT
+                  desiredDir = 0;
+                 }
+           }
+
+// --- Ejecución de órdenes según currentDir vs desiredDir (modo PERSISTENT) ---
+
+   if(currentDir == 0)
+     {
+      // No hay posición → posible apertura
+      if(desiredDir == +1)
+        {
+         PrintFormat("Señal BUY (PERSISTENT) long=%d, short=%d → abriendo BUY",
+                     longCount, shortCount);
+         OpenPosition(+1, "PERSISTENT_ENTER");
+        }
+      else
+         if(desiredDir == -1)
+           {
+            PrintFormat("Señal SELL (PERSISTENT) long=%d, short=%d → abriendo SELL",
+                        longCount, shortCount);
+            OpenPosition(-1, "PERSISTENT_ENTER");
+           }
+     }
+   else
+     {
+      // Ya hay posición
+      if(desiredDir == 0)
+        {
+         PrintFormat("Sin reglas en la dirección de la posición (PERSISTENT) long=%d, short=%d → cerrando",
+                     longCount, shortCount);
+         bool closed_ok = CloseCurrentPosition();
+         if(!closed_ok)
+            Print("WARNING (PERSISTENT): fallo al cerrar posición al quedar sin reglas → mantenemos hasta próximo tick/barra");
+        }
+      else
+         if(desiredDir != currentDir)
+           {
+            PrintFormat("Cambio de señal neta (PERSISTENT) currentDir=%d, desired=%d, long=%d, short=%d → giro",
+                        currentDir, desiredDir, longCount, shortCount);
+
+            bool closed_ok = CloseCurrentPosition();
+            if(!closed_ok)
+              {
+               Print("WARNING (PERSISTENT): fallo al cerrar posición en giro de señal → no abrimos posición nueva para evitar hedge");
+               return;
+              }
+
+            if(desiredDir == +1)
+               OpenPosition(+1, "PERSISTENT_FLIP");
+            else
+               OpenPosition(-1, "PERSISTENT_FLIP");
+           }
+         else
+           {
+            // desiredDir == currentDir → mantenemos
+            PrintFormat("Mantenemos posición (PERSISTENT) dir=%d, long=%d, short=%d",
+                        currentDir, longCount, shortCount);
+           }
+     }
+  }
+//+------------------------------------------------------------------+
+//| Tester function                                                  |
+//+------------------------------------------------------------------+
+double OnTester()
+  {
+   double profit = TesterStatistics(STAT_PROFIT);
+   double drawdown = TesterStatistics(STAT_BALANCE_DD_RELATIVE);
+   double totalTrades = TesterStatistics(STAT_TRADES);
+   double profitFactor = TesterStatistics(STAT_PROFIT_FACTOR);
+   double winPercentage = 0.0;
+
+   if(totalTrades > 0)
+     {
+      double profitTrades = TesterStatistics(STAT_PROFIT_TRADES);
+      winPercentage = profitTrades / totalTrades * 100.0;
+     }
+
+
+// Evitar división por cero y casos extremos
+   if(drawdown == 0 || drawdown < 0.01)
+      return 0;
+   if(profitFactor <= 0)
+      profitFactor = 0.01; // Evitar profit factor negativo o cero
+
+// Calcular el ratio Profit/MaxDD
+   double profitDrawdownRatio = profit / drawdown;
+
+// Calcular la raíz cuadrada del número de operaciones
+   double sqrtTrades = MathSqrt(totalTrades);
+
+// Calcular la métrica final: (Profit/MaxDD) * sqrt(Trades) * ProfitFactor * WinPercentage/100
+   double finalMetric = profitDrawdownRatio * sqrtTrades * profitFactor * (winPercentage / 100.0);
+
+// Imprimir las métricas para verificar
+   Print("--- OnTester Métricas ---");
+   Print("Profit: ", profit);
+   Print("Max Drawdown %: ", drawdown);
+   Print("Total Trades: ", totalTrades);
+   Print("Profit Factor: ", profitFactor);
+   Print("Win Percentage: ", winPercentage, "%");
+   Print("Profit/DD Ratio: ", profitDrawdownRatio);
+   Print("Final Metric: ", finalMetric);
+
+   return finalMetric;
+  }
+//+------------------------------------------------------------------+
