@@ -2,7 +2,6 @@
 import pandas as pd
 import numpy as np
 from scipy.stats import pointbiserialr, ks_2samp
-# from sklearn.feature_selection import mutual_info_regression # Omitido por brevedad/rendimiento en mock
 import joblib
 from joblib import Parallel, delayed
 import time
@@ -11,8 +10,10 @@ import os
 import hashlib
 import re
 import gc
+import contextlib
 from itertools import groupby
 from numpy.fft import fft, ifft
+from tqdm import tqdm
 
 # Intento de importar TA-Lib, fallback a implementaciones Pandas
 try:
@@ -20,10 +21,29 @@ try:
     HAS_TALIB = True
 except ImportError:
     HAS_TALIB = False
-    print("AVISO: TA-Lib no encontrado. Usando implementaciones Pandas (más lento).")
+    print("AVISO: TA-Lib no encontrado. Usando implementaciones Pandas.")
 
 # =============================================================================
-# HELPER: PANDAS INDICATORS (Fallback)
+# HELPER: TQDM CONTEXT MANAGER FOR JOBLIB
+# =============================================================================
+@contextlib.contextmanager
+def tqdm_joblib(tqdm_object):
+    """Context manager to patch joblib to report into tqdm progress bar"""
+    class TqdmBatchCompletionCallback(joblib.parallel.BatchCompletionCallBack):
+        def __call__(self, *args, **kwargs):
+            tqdm_object.update(n=self.batch_size)
+            return super().__call__(*args, **kwargs)
+
+    old_batch_callback = joblib.parallel.BatchCompletionCallBack
+    joblib.parallel.BatchCompletionCallBack = TqdmBatchCompletionCallback
+    try:
+        yield tqdm_object
+    finally:
+        joblib.parallel.BatchCompletionCallBack = old_batch_callback
+        tqdm_object.close()
+
+# =============================================================================
+# HELPER: PANDAS INDICATORS (Fallback Completo)
 # =============================================================================
 class PandasTA:
     @staticmethod
@@ -52,7 +72,6 @@ class PandasTA:
 
     @staticmethod
     def ADX(high, low, close, timeperiod=14):
-        # Implementación corregida de ADX (Signo de minus_dm arreglado)
         tr1 = high - low
         tr2 = (high - close.shift(1)).abs()
         tr3 = (low - close.shift(1)).abs()
@@ -60,12 +79,11 @@ class PandasTA:
         atr = tr.rolling(timeperiod).mean()
         
         up_move = high.diff()
-        down_move = -low.diff() # Corregido: positivo para movimiento a la baja
+        down_move = -low.diff()
         
         plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0)
         minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0)
         
-        # Evitar división por cero
         plus_di = 100 * (pd.Series(plus_dm).rolling(timeperiod).mean() / atr.replace(0, np.nan))
         minus_di = 100 * (pd.Series(minus_dm).rolling(timeperiod).mean() / atr.replace(0, np.nan))
         
@@ -78,168 +96,145 @@ class PandasTA:
 
     @staticmethod
     def PLUS_DI(high, low, close, timeperiod=14):
-         return pd.Series(np.zeros(len(close)), index=close.index) # Placeholder
+        tr1 = high - low
+        tr2 = (high - close.shift(1)).abs()
+        tr3 = (low - close.shift(1)).abs()
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        atr = tr.rolling(timeperiod).mean()
+        
+        up_move = high.diff()
+        plus_dm = np.where(up_move > 0, up_move, 0)
+        plus_di = 100 * (pd.Series(plus_dm).rolling(timeperiod).mean() / atr.replace(0, np.nan))
+        return plus_di.fillna(0)
 
     @staticmethod
     def MINUS_DI(high, low, close, timeperiod=14):
-         return pd.Series(np.zeros(len(close)), index=close.index) # Placeholder
+        tr1 = high - low
+        tr2 = (high - close.shift(1)).abs()
+        tr3 = (low - close.shift(1)).abs()
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        atr = tr.rolling(timeperiod).mean()
+        
+        down_move = -low.diff()
+        minus_dm = np.where(down_move > 0, down_move, 0)
+        minus_di = 100 * (pd.Series(minus_dm).rolling(timeperiod).mean() / atr.replace(0, np.nan))
+        return minus_di.fillna(0)
 
-# Wrapper para usar sintaxis TA-Lib
+# Wrapper
 def get_indicator(name, *args, **kwargs):
     if HAS_TALIB:
         func = getattr(ta, name)
         return func(*args, **kwargs)
     else:
-        # Mapeo a PandasTA
         func = getattr(PandasTA, name, None)
         if func:
             return func(*args, **kwargs)
-        return pd.Series(np.zeros(len(args[0]))) # Retorno seguro si no existe impl
+        return pd.Series(np.zeros(len(args[0]))) 
 
 # =============================================================================
-# CONFIGURACIÓN Y PARÁMETROS GLOBAL
+# CONFIGURACIÓN
 # =============================================================================
 CONFIG = {
-    'input_csv': 'GBPNZ_H12.csv', # Archivo de entrada
-    'cutoff_date': '2021-01-01',  # Fecha de corte para Partición Invertida
-    'n_monkey_sims': 100,         # Número de simulaciones Monkey Test
-    'monkey_percentile': 95,      # Percentil a superar en Monkey Test
-    'synthetic_sims': 50,         # Número de mundos sintéticos
-    'block_size': 30,             # Tamaño de bloque para Bootstrap (Trullas)
-    'sub_block_size': 5,          # Tamaño de sub-bloque
-    'min_trades': 50,             # Mínimo de trades para considerar una regla
-    'n_jobs': -1                  # Cores a usar (-1 = todos)
+    'input_csv': 'GBPNZ_H12.csv',
+    'cutoff_date': '2021-01-01',  
+    'n_monkey_sims': 100,         
+    'monkey_percentile': 95,      
+    'synthetic_sims': 50,         
+    'block_size': 30,             
+    'min_trades': 50,
+    'exposicion_dias': 4,
+    'n_jobs': -1                  
 }
 
 # =============================================================================
-# 1. INGENIERÍA DE DATOS Y PARTICIÓN (LÓGICA ANTOLÍ)
+# 1. INGENIERÍA DE DATOS
 # =============================================================================
 
-def load_and_transform_data(csv_path, exposicion_dias=4, threshold=25, short=False):
-    """
-    Carga datos y genera indicadores técnicos usando TA-Lib.
-    Mantiene la lógica original de Tomillero de generación masiva de features.
-    """
+def load_and_transform_data(csv_path, threshold=25, short=False):
     if not os.path.exists(csv_path):
-        raise FileNotFoundError(f"No se encuentra el archivo {csv_path}")
+        raise FileNotFoundError(f"No se encuentra {csv_path}")
         
     df = pd.read_csv(csv_path)
     
-    # Conversión de fechas asegurando formato
     if 'DateTime' in df.columns:
         df['DateTime'] = pd.to_datetime(df['DateTime'])
-    else:
-        pass 
+    
+    # --- 1. Calcular TARGETS PRIMERO (Futuro) ---
+    pips_multiplier = 10000 if 'JPY' not in csv_path else 100
+    max_horizon_bars = 30
+    
+    for i in range(2, max_horizon_bars + 1, 2):
+        future_close = df['Close'].shift(-i)
+        ret = (future_close - df['Close']) * pips_multiplier
+        if short: ret = ret * -1
+        df[f'Return_{i}'] = ret
+        
+    target_col = f'Return_{CONFIG["exposicion_dias"]}'
+    # Si no existe target col (por configuración errada), fallback
+    if target_col not in df.columns:
+        target_col = 'Return_4'
+        
+    df['Target'] = (df[target_col] >= threshold).astype(int)
 
-    # --- GENERACIÓN DE INDICADORES (Agnóstica) ---
-    # RSI
+    # --- 2. Calcular INDICADORES BASE ---
     for i in range(2, 51, 2):
         df[f'rsi_{i}'] = get_indicator('RSI', df['Close'], timeperiod=i)
-        
-    # ADX, DI+, DI- (Solo si TA-Lib está disponible o fallback implementado)
-    for i in range(2, 51, 2):
         df[f'adx_{i}'] = get_indicator('ADX', df['High'], df['Low'], df['Close'], timeperiod=i)
-        df[f'plus_di_{i}'] = get_indicator('PLUS_DI', df['High'], df['Low'], df['Close'], timeperiod=i) # Fallback devuelve 0
+        # Solo calculamos DI si tenemos TA-Lib o usará el fallback de PandasTA
+        df[f'plus_di_{i}'] = get_indicator('PLUS_DI', df['High'], df['Low'], df['Close'], timeperiod=i)
         df[f'minus_di_{i}'] = get_indicator('MINUS_DI', df['High'], df['Low'], df['Close'], timeperiod=i)
         
-    # Medias Móviles (SMA, EMA)
     for i in range(2, 201, 10): 
         df[f'sma_{i}'] = get_indicator('SMA', df['Close'], timeperiod=i)
         df[f'ema_{i}'] = get_indicator('EMA', df['Close'], timeperiod=i)
         
-    # Bollinger Bands
     for i in range(10, 51, 10):
-        # BBANDS devuelve tupla, hay que manejarlo con cuidado
         res = get_indicator('BBANDS', df['Close'], timeperiod=i, nbdevup=2, nbdevdn=2)
         if hasattr(res, '__len__') and len(res) == 3:
-            u, m, l = res
-            df[f'bb_upper_{i}'] = u
-            df[f'bb_lower_{i}'] = l
+            df[f'bb_upper_{i}'], _, df[f'bb_lower_{i}'] = res
         else:
-            # Fallback seguro
-            df[f'bb_upper_{i}'] = 0
-            df[f'bb_lower_{i}'] = 0
+            df[f'bb_upper_{i}'], df[f'bb_lower_{i}'] = 0, 0
 
-    # Shifts (Lags) para evitar look-ahead bias y capturar patrones previos
-    cols_to_shift = [c for c in df.columns if 'rsi' in c or 'adx' in c or 'sma' in c or 'Close' in c]
+    # --- 3. Crear SHIFTS (Lags) ---
+    cols_to_shift = [c for c in df.columns if any(x in c for x in ['rsi', 'adx', 'sma', 'ema', 'bb', 'plus', 'minus', 'Close'])]
     for col in cols_to_shift:
         for shift in [1, 2, 3]:
             df[f'{col}_sft_{shift}'] = df[col].shift(shift)
 
-    # --- DEFINICIÓN DE TARGET (SALIDA POR TIEMPO) ---
-    # Calculamos el retorno a N velas vista. 
-    pips_multiplier = 10000 if 'JPY' not in csv_path else 100
-    
-    # Generamos columnas de Retorno para múltiples horizontes (exposiciones)
-    for i in range(2, 31, 2):
-        future_close = df['Close'].shift(-i)
-        ret = (future_close - df['Close']) * pips_multiplier
-        if short:
-            ret = ret * -1
-        df[f'Return_{i}'] = ret
-
-    target_col = f'Return_{exposicion_dias}'
-    df['Target'] = (df[target_col] >= threshold).astype(int)
-    
-    # Limpieza
+    # --- 4. DATA CLEANING ---
+    df = df.iloc[:-max_horizon_bars].copy()
     df.dropna(inplace=True)
     df.reset_index(drop=True, inplace=True)
     
     return df
 
 def split_data_inverted(df, cutoff_date):
-    """
-    IMPLEMENTACIÓN FILOSOFÍA JAUME ANTOLÍ:
-    Train = Datos Recientes (Régimen Actual).
-    Test = Datos Antiguos (Validación Histórica).
-    """
     print(f"--- APLICANDO PARTICIÓN INVERTIDA (Cutoff: {cutoff_date}) ---")
-    
-    if df['DateTime'].dtype == object:
-         df['DateTime'] = pd.to_datetime(df['DateTime'])
-         
     train_df = df[df['DateTime'] > cutoff_date].copy().reset_index(drop=True)
     test_df = df[df['DateTime'] <= cutoff_date].copy().reset_index(drop=True)
-    
-    print(f"Train Set (Reciente): {min(train_df['DateTime'])} a {max(train_df['DateTime'])} | Filas: {len(train_df)}")
-    print(f"Test Set (Pasado): {min(test_df['DateTime'])} a {max(test_df['DateTime'])} | Filas: {len(test_df)}")
-    
+    print(f"Train (Reciente): {len(train_df)} filas | Test (Histórico): {len(test_df)} filas")
     return train_df, test_df
 
 # =============================================================================
-# 2. GENERACIÓN DE REGLAS (MAPEO)
+# 2. GENERADORES
 # =============================================================================
 
 def generate_combinatorial_rules(df, max_rules=10000):
-    """
-    Generador combinatorio de reglas robusto.
-    Crea reglas de tipo:
-    - Columna > Threshold (Percentiles)
-    - Columna < Threshold
-    - Columna1 > Columna2
-    """
     rules = []
-    # Filtrar solo columnas numéricas relevantes para reglas (indicadores)
-    numeric_cols = [c for c in df.columns if df[c].dtype in [np.float64, np.float32, np.int32, np.int64]]
-    # Excluir columnas de metadatos o targets
-    exclude_cols = ['Target', 'Return', 'year', 'month', 'day', 'hour', 'profit', 'DateTime']
-    numeric_cols = [c for c in numeric_cols if not any(ex in c for ex in exclude_cols) and 'Return_' not in c]
+    exclude = ['Target', 'Return', 'year', 'month', 'day', 'hour', 'profit', 'DateTime']
+    numeric_cols = [c for c in df.columns if df[c].dtype in [np.float64, np.float32] and not any(x in c for x in exclude)]
     
-    print(f"Generando reglas sobre {len(numeric_cols)} features...")
-    
-    # 1. Reglas de Valor (Thresholds dinámicos)
+    # 1. Reglas de Valor (Thresholds únicos)
     for col in numeric_cols:
-        series = df[col].dropna()
-        if series.empty: continue
+        series = df[col]
+        raw_thresholds = np.percentile(series, [10, 20, 30, 40, 50, 60, 70, 80, 90])
+        thresholds = np.unique(np.round(raw_thresholds, 4))
         
-        percentiles = [10, 20, 30, 40, 50, 60, 70, 80, 90]
-        thresholds = np.percentile(series, percentiles)
-        
-        for t in list(set(thresholds)):
-            rules.append(f"{col} > {t:.5f}")
-            rules.append(f"{col} < {t:.5f}")
+        for t in thresholds:
+            rules.append(f"{col} > {t}")
+            rules.append(f"{col} < {t}")
             
-    # 2. Reglas de Cruce (Crosses)
+    # 2. Cruces
     for i, col1 in enumerate(numeric_cols):
         for col2 in numeric_cols[i+1:]:
             family_match = (
@@ -247,332 +242,342 @@ def generate_combinatorial_rules(df, max_rules=10000):
                 ('adx' in col1 and 'adx' in col2) or
                 (('sma' in col1 or 'ema' in col1 or 'Close' in col1) and ('sma' in col2 or 'ema' in col2 or 'Close' in col2))
             )
-            
             if family_match:
                 rules.append(f"{col1} > {col2}")
                 rules.append(f"{col1} < {col2}")
                 
-        if len(rules) > max_rules * 2:
-            break
+        if len(rules) > max_rules * 2: break
             
-    # Limitar cantidad
     if len(rules) > max_rules:
         rules = [rules[i] for i in np.random.choice(len(rules), max_rules, replace=False)]
-        
     return rules
 
 # =============================================================================
-# 3. MOTOR DE VALIDACIÓN ESTADÍSTICA (EL NÚCLEO NUEVO)
+# 3. VALIDACIÓN & METRICAS
 # =============================================================================
 
-def vectorized_monkey_test(signals, returns, n_sims=100, percentile=95):
-    """
-    MONKEY TEST VECTORIZADO (CORREGIDO).
-    El test debe ejecutarse siempre, incluso si el retorno original es negativo,
-    porque podría ser mejor que el azar (skill defensiva).
-    """
+def calculate_max_drawdown(equity_curve):
+    running_max = np.maximum.accumulate(equity_curve)
+    drawdown = equity_curve - running_max
+    return np.min(drawdown)
+
+def calculate_metrics(returns):
+    if len(returns) == 0: return {}
+    equity = np.cumsum(returns)
+    wins = returns[returns > 0]
+    losses = returns[returns < 0]
+    
+    return {
+        'total_profit': np.sum(returns),
+        'sharpe': np.mean(returns) / (np.std(returns, ddof=1) + 1e-9),
+        'max_dd': calculate_max_drawdown(equity),
+        'win_rate': len(wins) / len(returns),
+        'pf': np.sum(wins) / abs(np.sum(losses)) if len(losses) > 0 else 999
+    }
+
+def vectorized_monkey_test_ultra(signals, returns, n_sims=100, percentile=95):
+    """MONKEY TEST ULTRA VECTORIZADO"""
     real_return = np.sum(returns[signals])
     n_bars = len(returns)
     
-    # Generamos N shifts aleatorios (evitamos shift 0)
-    shifts = np.random.randint(low=1, high=n_bars, size=n_sims)
+    shifts = np.random.randint(1, n_bars, size=n_sims)
+    indices = np.arange(n_bars)
+    shifted_indices = (indices[None, :] - shifts[:, None]) % n_bars
+    signals_matrix = signals[shifted_indices]
     
-    # Vectorización real usando broadcasting
-    monkey_returns = np.array([
-        np.sum(returns[np.roll(signals, s)]) 
-        for s in shifts
-    ])
+    monkey_returns = (signals_matrix * returns[None, :]).sum(axis=1)
     
     threshold_val = np.percentile(monkey_returns, percentile)
-    
     is_robust = real_return > threshold_val
     return is_robust, threshold_val
 
-
 def calculate_acf(x, lags=20):
-    """Calcula la función de autocorrelación (ACF) usando FFT (Rápido)"""
     x = np.array(x, dtype=float)
     n = len(x)
     if n == 0: return np.zeros(lags + 1)
-    
     x_centered = x - np.mean(x)
     fft_x = fft(x_centered, n=2*n)
-    power_spectrum = fft_x * np.conj(fft_x)
-    acf_full = ifft(power_spectrum).real[:n] / n
-    
-    c0 = acf_full[0]
-    if c0 == 0:
-        return np.zeros(lags + 1)
-        
-    return acf_full[:lags + 1] / c0
+    power = fft_x * np.conj(fft_x)
+    acf = ifft(power).real[:n] / n
+    return acf[:lags+1] / acf[0] if acf[0] != 0 else np.zeros(lags+1)
 
-def validate_synthetic_series(original_returns, synthetic_returns):
-    """
-    Valida la calidad de la serie sintética comparándola con la original.
-    """
+def validate_synthetic_series(orig, synth):
     scores = {}
-    
-    # 1. Test Kolmogorov-Smirnov
-    ks_stat, ks_pvalue = ks_2samp(original_returns, synthetic_returns)
-    scores['ks_score'] = ks_pvalue
-    
-    # 2. Desviación Estándar
-    std_orig = np.std(original_returns)
-    std_synth = np.std(synthetic_returns)
-    if std_orig == 0:
-        scores['std_score'] = 0
-    else:
-        scores['std_score'] = min(std_orig, std_synth) / max(std_orig, std_synth)
-        
-    # 3. ACF Returns
-    acf_orig = calculate_acf(original_returns, lags=10)
-    acf_synth = calculate_acf(synthetic_returns, lags=10)
-    if np.std(acf_orig) == 0 or np.std(acf_synth) == 0:
-        scores['acf_score'] = 0
-    else:
-        scores['acf_score'] = np.corrcoef(acf_orig, acf_synth)[0, 1]
-        
-    # 4. ACF Squared Returns
-    acf_sq_orig = calculate_acf(original_returns**2, lags=10)
-    acf_sq_synth = calculate_acf(synthetic_returns**2, lags=10)
-    if np.std(acf_sq_orig) == 0 or np.std(acf_sq_synth) == 0:
-        scores['acf_sq_score'] = 0
-    else:
-        scores['acf_sq_score'] = np.corrcoef(acf_sq_orig, acf_sq_synth)[0, 1]
-        
+    _, ks_p = ks_2samp(orig, synth)
+    scores['ks_score'] = ks_p
+    s1, s2 = np.std(orig), np.std(synth)
+    scores['std_score'] = min(s1, s2)/max(s1,s2) if max(s1,s2) > 0 else 0
+    a1, a2 = calculate_acf(orig, 10), calculate_acf(synth, 10)
+    scores['acf_score'] = np.corrcoef(a1, a2)[0,1] if (np.std(a1)>0 and np.std(a2)>0) else 0
+    q1, q2 = calculate_acf(orig**2, 10), calculate_acf(synth**2, 10)
+    scores['acf_sq_score'] = np.corrcoef(q1, q2)[0,1] if (np.std(q1)>0 and np.std(q2)>0) else 0
     return scores
 
 def generate_synthetic_blocks_check(trade_returns, n_sims=50, block_size=30):
-    """
-    VALIDACIÓN SINTÉTICA DE CURVA DE EQUITY (MÉTODO TRULLAS APLICADO A PnL).
-    Versión Avanzada corregida: Bootstrap CON REEMPLAZO.
-    """
-    if len(trade_returns) < 50:
-        return False # Muy pocos trades para estadística fiable
-        
-    n_trades = len(trade_returns)
-    valid_sims_generated = 0
-    passed_sims = 0
-    attempts = 0
-    max_attempts = n_sims * 10 
+    if len(trade_returns) < 50: return False
     
-    # Preparar bloques
+    n_trades = len(trade_returns)
+    valid_sims = 0
+    passed = 0
+    attempts = 0
+    max_attempts = n_sims * 10
+    
     indices = np.arange(n_trades)
     n_blocks = max(1, n_trades // block_size)
     blocks = np.array_split(indices, n_blocks)
     
-    while valid_sims_generated < n_sims and attempts < max_attempts:
+    while valid_sims < n_sims and attempts < max_attempts:
         attempts += 1
         
-        # --- GENERACIÓN (Bootstrap CON Reemplazo) ---
-        sampled_block_indices = np.random.randint(0, len(blocks), size=len(blocks))
-        sampled_blocks = [blocks[i] for i in sampled_block_indices]
+        sampled_idc = np.random.randint(0, len(blocks), size=len(blocks))
+        new_indices = np.concatenate([blocks[i] for i in sampled_idc])
         
-        new_indices = np.concatenate(sampled_blocks)
-        if len(new_indices) > n_trades:
-             new_indices = new_indices[:n_trades]
-        elif len(new_indices) < n_trades:
-             extra_block = blocks[np.random.randint(0, len(blocks))]
-             new_indices = np.concatenate([new_indices, extra_block])[:n_trades]
-            
-        synthetic_returns = trade_returns[new_indices]
+        if len(new_indices) > n_trades: new_indices = new_indices[:n_trades]
+        elif len(new_indices) < n_trades: 
+             extra = blocks[np.random.randint(0, len(blocks))]
+             new_indices = np.concatenate([new_indices, extra])[:n_trades]
+             
+        synth_ret = trade_returns[new_indices]
+        scores = validate_synthetic_series(trade_returns, synth_ret)
         
-        # --- QUALITY GATE ---
-        quality_scores = validate_synthetic_series(trade_returns, synthetic_returns)
-        
-        is_valid_data = (
-            quality_scores['std_score'] > 0.90 and      
-            quality_scores['acf_sq_score'] > 0.70 and   
-            quality_scores['ks_score'] > 0.05
+        weighted_score = (
+            scores['std_score'] * 0.25 +
+            scores['acf_sq_score'] * 0.35 +
+            scores['ks_score'] * 0.20 + 
+            scores['acf_score'] * 0.20
         )
         
-        if not is_valid_data:
-            continue
+        if weighted_score > 0.80:
+            valid_sims += 1
+            if np.sum(synth_ret) > 0: passed += 1
             
-        valid_sims_generated += 1
-        
-        # --- VALIDACIÓN DE ESTRATEGIA ---
-        if np.sum(synthetic_returns) > 0:
-            passed_sims += 1
-            
-    if valid_sims_generated == 0:
-        return False
-        
-    pass_rate = passed_sims / valid_sims_generated
-    return pass_rate >= 0.80
+    if valid_sims == 0: return False
+    return (passed / valid_sims) >= 0.80
 
-def process_rules_parallel(df_values, columns, rules_list, target_col_idx, returns_cols_indices):
-    """
-    Función worker para Joblib.
-    """
+def process_rules(df_values, columns, rules_list, target_col_idx):
     valid_rules = []
     main_return_col = df_values[:, target_col_idx]
     
-    for rule_parts_str in rules_list:
-        parts = rule_parts_str.split()
-        if len(parts) != 3:
-            continue
-            
-        col1_name, operator, col2_or_val = parts
+    cols_map = {name: i for i, name in enumerate(columns)}
+    
+    for rule_str in rules_list:
+        parts = rule_str.split()
+        if len(parts) != 3: continue
+        col1, op, col2 = parts
         
+        if col1 not in cols_map: continue
+        idx1 = cols_map[col1]
+        
+        is_val = False
         try:
-            idx1 = columns.get_loc(col1_name)
-        except KeyError:
-            continue
-            
-        try:
-            val = float(col2_or_val)
-            is_value_comparison = True
-            idx2 = None
-        except ValueError:
-            try:
-                idx2 = columns.get_loc(col2_or_val)
-                is_value_comparison = False
-            except KeyError:
-                continue
-
-        # Evaluación Vectorizada
-        if is_value_comparison:
-            if operator == '>': signals = df_values[:, idx1] > val
-            elif operator == '<': signals = df_values[:, idx1] < val
-            elif operator == '>=': signals = df_values[:, idx1] >= val
-            elif operator == '<=': signals = df_values[:, idx1] <= val
-            elif operator == '==': signals = df_values[:, idx1] == val
+             val = float(col2)
+             is_val = True
+        except:
+             if col2 not in cols_map: continue
+             idx2 = cols_map[col2]
+        
+        # Eval
+        v1 = df_values[:, idx1]
+        if is_val:
+            if op == '>': s = v1 > val
+            elif op == '<': s = v1 < val
             else: continue
         else:
-            if operator == '>': signals = df_values[:, idx1] > df_values[:, idx2]
-            elif operator == '<': signals = df_values[:, idx1] < df_values[:, idx2]
-            elif operator == '>=': signals = df_values[:, idx1] >= df_values[:, idx2]
-            elif operator == '<=': signals = df_values[:, idx1] <= df_values[:, idx2] 
-            elif operator == '==': signals = df_values[:, idx1] == df_values[:, idx2]
+            v2 = df_values[:, idx2]
+            if op == '>': s = v1 > v2
+            elif op == '<': s = v1 < v2
             else: continue
+            
+        n_trades = np.sum(s)
+        if n_trades < CONFIG['min_trades']: continue
         
-        n_trades = np.sum(signals)
-        if n_trades < CONFIG['min_trades']:
+        rule_returns = main_return_col[s]
+        metrics = calculate_metrics(rule_returns)
+        
+        if metrics['total_profit'] <= 0: continue
+        
+        # Validation
+        robust, _ = vectorized_monkey_test_ultra(s, main_return_col, 
+                                                 CONFIG['n_monkey_sims'], 
+                                                 CONFIG['monkey_percentile'])
+        if not robust: continue
+        
+        if not generate_synthetic_blocks_check(rule_returns, 
+                                             CONFIG['synthetic_sims'], 
+                                             CONFIG['block_size']):
             continue
             
-        # 2. EVALUACIÓN BÁSICA
-        rule_returns = main_return_col[signals]
-        total_profit = np.sum(rule_returns)
-        
-        if total_profit <= 0:
-            continue
-            
-        # 3. FILTRO 1: MONKEY TEST
-        is_monkey_robust, _ = vectorized_monkey_test(signals, main_return_col, 
-                                                   n_sims=CONFIG['n_monkey_sims'], 
-                                                   percentile=CONFIG['monkey_percentile'])
-        
-        if not is_monkey_robust:
-            continue 
-            
-        # 4. FILTRO 2: SYNTHETIC DATA
-        # Pasamos solo los retornos de los trades (Equity Curve)
-        is_synthetic_robust = generate_synthetic_blocks_check(rule_returns, 
-                                                            n_sims=CONFIG['synthetic_sims'],
-                                                            block_size=CONFIG['block_size'])
-        
-        if not is_synthetic_robust:
-            continue 
-            
-        # Si pasa todo, guardamos
-        wins = np.sum(rule_returns[rule_returns > 0])
-        losses = abs(np.sum(rule_returns[rule_returns < 0]))
-        pf = wins / losses if losses > 0 else np.inf
-        
         valid_rules.append({
-            'Rule': rule_parts_str,
+            'Rule': rule_str,
             'Trades': n_trades,
-            'Profit': total_profit,
-            'PF': pf
+            'Profit': metrics['total_profit'],
+            'PF': metrics['pf'],
+            'Sharpe': metrics['sharpe'],
+            'MaxDD': metrics['max_dd']
         })
         
     return valid_rules
 
 # =============================================================================
-# 4. EXPORTACIÓN A STRATEGYQUANT X
+# 4. EXPORTACIÓN
 # =============================================================================
 
 def format_rule_for_sqx(rule_str):
-    sqx_rule = rule_str
-    if 'rsi_' in rule_str:
-        period = re.search(r'rsi_(\d+)', rule_str).group(1)
-        sqx_rule = sqx_rule.replace(f'rsi_{period}', f'RSI({period})')
-        
-    if 'sma_' in rule_str:
-        period = re.search(r'sma_(\d+)', rule_str).group(1)
-        sqx_rule = sqx_rule.replace(f'sma_{period}', f'SMA({period})')
-        
-    return f"LONG IF: {sqx_rule}"
-
-def export_to_sqx_format(winning_rules_df):
-    print("\n--- GENERANDO REPORTE COMPATIBLE CON STRATEGYQUANT X ---")
-    print("Copiar y pegar estas reglas en AlgoWizard -> Custom Block o Conditions")
+    sqx = rule_str
+    sqx = re.sub(r'rsi_(\d+)', r'RSI(Close, \1)', sqx)
+    sqx = re.sub(r'sma_(\d+)', r'SMA(Close, \1)', sqx)
+    sqx = re.sub(r'ema_(\d+)', r'EMA(Close, \1)', sqx)
+    sqx = re.sub(r'adx_(\d+)', r'ADX(\1)', sqx)
+    sqx = re.sub(r'bb_upper_(\d+)', r'BollingerUpper(Close, \1, 2)', sqx)
+    sqx = re.sub(r'bb_lower_(\d+)', r'BollingerLower(Close, \1, 2)', sqx)
+    sqx = re.sub(r'plus_di_(\d+)', r'PlusDI(\1)', sqx)
+    sqx = re.sub(r'minus_di_(\d+)', r'MinusDI(\1)', sqx)
+    sqx = re.sub(r'_sft_(\d+)', r'[\1]', sqx)
     
-    for idx, row in winning_rules_df.iterrows():
-        sqx_code = format_rule_for_sqx(row['Rule'])
-        print(f"// Regla #{idx} | Profit: {row['Profit']:.2f} | PF: {row['PF']:.2f}")
-        print(sqx_code)
-        print("-" * 50)
+    return f"ENTRY LONG IF: {sqx}"
+
+def export_to_sqx_file(rules_df, filename='strategies_sqx.txt'):
+    with open(filename, 'w') as f:
+        f.write("// StrategyQuant X Compatible Rules\n")
+        f.write(f"// Generated: {datetime.now()}\n\n")
+        
+        for idx, row in rules_df.iterrows():
+            f.write(f"// ========== STRATEGY #{idx+1} ==========\n")
+            f.write(f"// Train Profit: {row['Train_Profit']:.2f}\n")
+            f.write(f"// Test Profit: {row['Test_Profit']:.2f}\n")
+            f.write(f"// PF: {row['PF']:.2f} | Sharpe: {row.get('Test_Sharpe',0):.2f}\n")
+            f.write(format_rule_for_sqx(row['Rule']))
+            f.write("\n\n")
+    print(f"✅ Exportado a {filename}")
 
 # =============================================================================
-# MAIN PIPELINE
+# MAIN
 # =============================================================================
 
 if __name__ == "__main__":
-    print("Iniciando Pipeline Unificada de Minería y Validación...")
+    print("=== UNIFIED RULE MINER v3.0 (FULL AUDIT) ===")
     
-    # 1. Cargar Datos
+    # 1. LOAD OR DUMMY
     if not os.path.exists(CONFIG['input_csv']):
-        print(f"AVISO: Generando datos dummy para test porque no existe {CONFIG['input_csv']}")
-        dates = pd.date_range(start='2015-01-01', end='2024-01-01', freq='4H')
-        df_dummy = pd.DataFrame({
+        print("⚠️ CSV no encontrado. Generando datos dummy...")
+        dates = pd.date_range('2015-01-01', '2024-01-01', freq='4H')
+        df = pd.DataFrame({
             'DateTime': dates,
-            'Close': np.random.lognormal(0, 0.01, size=len(dates)).cumsum() + 1000,
-            'High': np.random.lognormal(0, 0.01, size=len(dates)).cumsum() + 1005,
-            'Low': np.random.lognormal(0, 0.01, size=len(dates)).cumsum() + 995
+            'Close': 1000 + np.cumsum(np.random.randn(len(dates)) * 0.1),
+            'High': 1005 + np.cumsum(np.random.randn(len(dates)) * 0.1),
+            'Low': 995 + np.cumsum(np.random.randn(len(dates)) * 0.1)
         })
-        df = df_dummy
-        # Mocking indicadores
-        df['rsi_14'] = np.random.uniform(20, 80, size=len(df))
-        df['sma_20'] = df['Close'] * np.random.uniform(0.95, 1.05, size=len(df))
-        # Mocking targets
-        df['Return_4'] = np.random.normal(0, 10, size=len(df)) # Pips return
+        df.to_csv('temp_dummy.csv', index=False)
+        df = load_and_transform_data('temp_dummy.csv')
+        try: os.remove('temp_dummy.csv')
+        except: pass
     else:
-        df = load_and_transform_data(CONFIG['input_csv'], short=True) 
-        
-    # 2. Split Invertido (Jaume Antolí)
+        df = load_and_transform_data(CONFIG['input_csv'])
+
+    # 2. SPLIT
     train_df, test_df = split_data_inverted(df, CONFIG['cutoff_date'])
     
-    # 3. Generar Reglas ("Átomos")
-    print("Generando universo de reglas con 'Robust Combinatorial Generator'...")
-    rules = generate_combinatorial_rules(train_df) 
-    print(f"Total reglas generadas: {len(rules)}")
+    # 3. GENERAR
+    rules = generate_combinatorial_rules(train_df)
+    print(f"Reglas generadas: {len(rules)}")
     
-    # 4. Procesamiento Paralelo con Filtros Robustos
-    print("Iniciando Minería con Validación Vectorizada (Monkey + Synth)...")
-    
-    train_values = train_df.to_numpy() 
-    columns = train_df.columns
-    target_idx = columns.get_loc(f'Return_4')
-    
-    chunk_size = len(rules) // 4 
-    if chunk_size == 0: chunk_size = 1
+    # 4. PROCESAMIENTO PARALELO
+    n_cores = os.cpu_count() or 4
+    chunk_size = max(100, len(rules) // (n_cores * 3))
     chunks = [rules[i:i + chunk_size] for i in range(0, len(rules), chunk_size)]
     
-    results = Parallel(n_jobs=CONFIG['n_jobs'])(
-        delayed(process_rules_parallel)(train_values, columns, chunk, target_idx, []) 
-        for chunk in chunks
-    )
+    print(f"Procesando en {len(chunks)} chunks con {n_cores} cores...")
     
-    flat_results = [item for sublist in results for item in sublist]
-    results_df = pd.DataFrame(flat_results)
+    tv = train_df.to_numpy()
+    cols = train_df.columns
+    t_idx = cols.get_loc(f"Return_{CONFIG['exposicion_dias']}")
     
-    # 5. Reporte y Exportación
-    if not results_df.empty:
-        print(f"\nReglas Sobrevivientes a Filtros: {len(results_df)}")
-        best_rules = results_df.sort_values('Profit', ascending=False).head(10)
-        export_to_sqx_format(best_rules)
-        best_rules.to_csv('reglas_validadas_sqx.csv', index=False)
+    with tqdm_joblib(tqdm(total=len(rules))) as pbar:
+        results = Parallel(n_jobs=CONFIG['n_jobs'])(
+            delayed(process_rules)(tv, cols, ch, t_idx) for ch in chunks
+        )
+    
+    flat = [r for sub in results for r in sub]
+    res_df = pd.DataFrame(flat)
+    
+    if not res_df.empty:
+        print(f"\nReglas Train Sobrevivientes: {len(res_df)}")
+        best = res_df.sort_values('Profit', ascending=False)
+        
+        # 5. VALIDACIÓN TEST (WALK-FORWARD)
+        print("\n--- VALIDACIÓN EN TEST SET (Walk-Forward) ---")
+        test_v = test_df.to_numpy()
+        test_survivors = []
+        
+        cols_map = {n: i for i, n in enumerate(cols)}
+        t_target_idx = cols.get_loc(f"Return_{CONFIG['exposicion_dias']}")
+        t_ret_full = test_v[:, t_target_idx]
+        
+        for idx, row in tqdm(best.iterrows(), total=len(best), desc="Validando en Test"):
+            r_str = row['Rule']
+            parts = r_str.split()
+            c1, op, c2 = parts
+            
+            if c1 not in cols_map: continue
+            idx1 = cols_map[c1]
+            try:
+                val = float(c2)
+                v1 = test_v[:, idx1]
+                if op == '>': s = v1 > val
+                else: s = v1 < val
+            except:
+                if c2 not in cols_map: continue
+                idx2 = cols_map[c2]
+                v1, v2 = test_v[:, idx1], test_v[:, idx2]
+                if op == '>': s = v1 > v2
+                else: s = v1 < v2
+                
+            n_t = np.sum(s)
+            if n_t < 10: continue
+            
+            test_returns = t_ret_full[s]
+            test_metrics = calculate_metrics(test_returns)
+            
+            # Re-confirmar robustez en Test (Monkey + Synth)
+            monkey_pass, _ = vectorized_monkey_test_ultra(
+                s, t_ret_full, 
+                CONFIG['n_monkey_sims'], CONFIG['monkey_percentile']
+            )
+            
+            synth_pass = generate_synthetic_blocks_check(
+                test_returns,
+                CONFIG['synthetic_sims'], CONFIG['block_size']
+            )
+            
+            deg = (row['Profit'] - test_metrics['total_profit']) / row['Profit'] if row['Profit'] > 0 else 999
+            
+            test_survivors.append({
+                'Rule': r_str,
+                'Train_Profit': row['Profit'],
+                'Test_Profit': test_metrics['total_profit'],
+                'Test_Sharpe': test_metrics['sharpe'],
+                'Degradation': deg,
+                'Monkey_OK': monkey_pass,
+                'Synth_OK': synth_pass,
+                'PF': row['PF']
+            })
+            
+        final_df = pd.DataFrame(test_survivors)
+        
+        # Filtrado Final
+        if not final_df.empty:
+            ultra_robust = final_df[
+                (final_df['Monkey_OK']) & 
+                (final_df['Synth_OK']) &
+                (final_df['Test_Profit'] > 0)
+            ].copy()
+            
+            print(f"\nReglas Ultra-Robustas (Train + Test OK): {len(ultra_robust)}")
+            if not ultra_robust.empty:
+                export_to_sqx_file(ultra_robust)
+                ultra_robust.to_csv('final_ultra_robust.csv')
+        else:
+            print("Ninguna regla pasó la validación Walk-Forward.")
+            
     else:
-        print("Ninguna regla pasó los filtros de robustez estricta.")
+        print("No se encontraron reglas robustas en Train.")
