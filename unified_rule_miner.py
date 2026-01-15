@@ -617,8 +617,9 @@ def generate_synthetic_blocks_check(trade_returns, n_sims=50, block_size=30):
     n_trades = len(trade_returns)
     valid_sims = 0
     passed = 0
+    passed = 0
     attempts = 0
-    max_attempts = n_sims * 50 # RELAX AUDIT 3.0 (Más intentos)
+    max_attempts = n_sims * 5 # OPTIMIZATION: Antes 50x. Evitar loop infinito en datos ruidosos.
     
     indices = np.arange(n_trades)
     n_blocks = max(1, n_trades // block_size)
@@ -837,7 +838,8 @@ if __name__ == "__main__":
     
     # 6. PROCESSING
     n_cores = os.cpu_count() or 4
-    chunk_size = max(100, len(rules) // (n_cores * 3))
+    # Chunk pequeño para que la barra de progreso se mueva rápido
+    chunk_size = max(10, len(rules) // (n_cores * 10))
     chunks = [rules[i:i + chunk_size] for i in range(0, len(rules), chunk_size)]
     
     print(f"Procesando en {len(chunks)} chunks con {n_cores} cores...")

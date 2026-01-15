@@ -352,12 +352,33 @@ with tabs[2]:
                 
                 test_data[task['L']] = (test, train.columns) # Guardar para validación
                 
+                # Generar reglas
                 rules = miner.generate_combinatorial_rules(train, max_rules=3000)
+                st.write(f"  > Generadas {len(rules)} reglas candidatas. Evaluando...")
                 
-                # Evaluar
-                chunk_res = miner.process_rules(train.to_numpy(), train.columns, rules, train.columns.get_loc(f"Return_{cfg['exposure']}"))
-                for r in chunk_res: r['Direction'] = task['L']
-                results.extend(chunk_res)
+                # CHUNKED PROCESSING (Fix Freeze)
+                # Dividir en chunks para actualizar UI
+                chunk_size = 100 
+                rule_chunks = [rules[i:i + chunk_size] for i in range(0, len(rules), chunk_size)]
+                
+                # Main Bar para los Chunks
+                target_idx = train.columns.get_loc(f"Return_{cfg['exposure']}")
+                
+                chunk_prog = st.progress(0)
+                
+                for j, batch in enumerate(rule_chunks):
+                    # Process batch secuencialmente (más seguro en Streamlit que Parallel)
+                    # Parallel de joblib funciona bien en script, pero en streamlit puede dar timeouts.
+                    # Al ser chunks pequeños, el loop Python no bloquea tanto.
+                    batch_res = miner.process_rules(train.to_numpy(), train.columns, batch, target_idx)
+                    for r in batch_res: r['Direction'] = task['L']
+                    results.extend(batch_res)
+                    
+                    # Update progress
+                    chunk_prog.progress((j + 1) / len(rule_chunks))
+                    status.text(f"Minando {task['L']}... ({j*chunk_size}/{len(rules)}) - Encontradas: {len(results)}")
+                
+                chunk_prog.empty()
                 progress.progress((i+1)/len(queue))
                 
             if results:
