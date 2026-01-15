@@ -1,2 +1,21 @@
 
-.ipynb_checkpoints/rule_extractor_robotrader-checkpoint.ipynb
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.streamlit/
+*.log
+
+# Data (USER REQUEST)
+Datos pares/
+Datos pares/*
+
+# Temp files
+temp*.csv
+temp*.txt
+*.tmp
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
